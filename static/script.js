@@ -20,14 +20,15 @@ async function loadResults() {
     if (loadBtn.disabled) return;
     
     // Récupérer le seuil de progression
-    const gain = ecartMinInput.value.trim() || '0';
+    const gain = ecartMinInput.value.trim();
     
     // Désactiver le bouton et afficher le chargement
     setLoading(true);
     updateInfoPanel('Chargement en cours...', 'info');
     
     try {
-        const response = await fetch(`/api/results?gain=${encodeURIComponent(gain)}`);
+        const query = gain ? `?gain=${encodeURIComponent(gain)}` : '';
+        const response = await fetch(`/api/results${query}`);
         const data = await response.json();
         
         if (data.success) {

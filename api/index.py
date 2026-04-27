@@ -149,11 +149,11 @@ def search_club_by_name(club_name):
     return clubs
 
 
-def get_results(club_num=None, min_progression=0):
+def get_results(club_num=None, min_progression=None):
     results = []
     players = get_club_licence_details(club_num)
     for player in players:
-        if player["progression"] < min_progression:
+        if min_progression is not None and player["progression"] < min_progression:
             continue
         results.append(player)
     results.sort(key=lambda x: x["progression"], reverse=True)
@@ -193,10 +193,11 @@ def api_search_club():
 def api_results():
     from flask import request
     club_num = request.args.get('club', CLUB_NUM)
+    raw_gain = request.args.get('gain', request.args.get('ecart', '')).strip()
     try:
-        min_progression = int(request.args.get('gain', request.args.get('ecart', 0)))
+        min_progression = int(raw_gain) if raw_gain else None
     except ValueError:
-        min_progression = 0
+        min_progression = None
     
     try:
         results = get_results(club_num=club_num, min_progression=min_progression)
@@ -210,10 +211,11 @@ def api_results():
 def download_results():
     from flask import request
     club_num = request.args.get('club', CLUB_NUM)
+    raw_gain = request.args.get('gain', request.args.get('ecart', '')).strip()
     try:
-        min_progression = int(request.args.get('gain', request.args.get('ecart', 0)))
+        min_progression = int(raw_gain) if raw_gain else None
     except ValueError:
-        min_progression = 0
+        min_progression = None
     
     try:
         results = get_results(club_num=club_num, min_progression=min_progression)

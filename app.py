@@ -143,17 +143,17 @@ def search_club_by_name(club_name):
     return clubs
 
 
-def get_results(club_num=None, min_progression=0):
+def get_results(club_num=None, min_progression=None):
     """Récupère la progression des joueurs via pointm - point
     
     Args:
         club_num: Numéro du club (utilise CLUB_NUM par défaut)
-        min_progression: Gain minimal mensuel (par défaut 0)
+        min_progression: Gain minimal mensuel (par défaut aucun filtre)
     """
     results = []
     players = get_club_licence_details(club_num)
     for player in players:
-        if player["progression"] < min_progression:
+        if min_progression is not None and player["progression"] < min_progression:
             continue
         results.append(player)
     results.sort(key=lambda x: x["progression"], reverse=True)
@@ -205,10 +205,11 @@ def api_results():
             "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM dans les variables d'environnement."
         }), 500
     club_num = request.args.get('club', CLUB_NUM)
+    raw_gain = request.args.get('gain', request.args.get('ecart', '')).strip()
     try:
-        min_progression = int(request.args.get('gain', request.args.get('ecart', 0)))
+        min_progression = int(raw_gain) if raw_gain else None
     except ValueError:
-        min_progression = 0
+        min_progression = None
     
     try:
         results = get_results(club_num=club_num, min_progression=min_progression)
@@ -228,10 +229,11 @@ def download_results():
             "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM dans les variables d'environnement."
         }), 500
     club_num = request.args.get('club', CLUB_NUM)
+    raw_gain = request.args.get('gain', request.args.get('ecart', '')).strip()
     try:
-        min_progression = int(request.args.get('gain', request.args.get('ecart', 0)))
+        min_progression = int(raw_gain) if raw_gain else None
     except ValueError:
-        min_progression = 0
+        min_progression = None
     
     try:
         results = get_results(club_num=club_num, min_progression=min_progression)
