@@ -162,6 +162,46 @@ def get_club_licence_details(club_num=None):
         return []
 
 
+def get_player_details_xml_joueur(licence):
+    content = make_request(
+        "xml_joueur.php",
+        {"licence": licence, "auto": "1"},
+        timeout=20,
+        use_new_session=True,
+        close_connection=True,
+        base_url=JOUEUR_BASE_URL,
+    )
+    if not content:
+        raise ValueError(f"Impossible de recuperer xml_joueur pour la licence {licence}")
+
+    try:
+        root = ET.fromstring(content)
+        if extract_api_error(root):
+            raise ValueError(f"Erreur FFTT sur xml_joueur pour la licence {licence}")
+
+        joueur = root.find(".//joueur")
+        if joueur is None:
+            raise ValueError(f"Aucune fiche joueur trouvee pour la licence {licence}")
+
+        clpro = parse_points(joueur.findtext("clpro"))
+        valinit = parse_points(joueur.findtext("valinit"))
+        if clpro is None or valinit is None:
+            raise ValueError(f"clpro ou valinit manquant pour la licence {licence}")
+
+        return {
+            "licence": (joueur.findtext("licence") or licence).strip(),
+            "nom": (joueur.findtext("nom") or "").strip(),
+            "prenom": (joueur.findtext("prenom") or "").strip(),
+            "club": (joueur.findtext("club") or "").strip(),
+            "nclub": (joueur.findtext("nclub") or "").strip(),
+            "clpro": clpro,
+            "valinit": valinit,
+            "progression": clpro - valinit,
+        }
+    except ET.ParseError as e:
+        raise ValueError(f"Reponse XML invalide pour la licence {licence}: {e}") from e
+
+
 def search_club_by_name(club_name):
     """Recherche un club par son nom et retourne les résultats"""
     content = make_request('xml_club_b.php', {'nom': club_name})
