@@ -27,15 +27,18 @@ SERIE = os.getenv("FFTT_SERIE")
 CLUB_NUM = os.getenv("FFTT_CLUB_NUM")
 BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
 
-# Vérifier que toutes les variables sont définies
-if not all([MOTDEPASSE, ID_APP, SERIE, CLUB_NUM]):
-    raise ValueError("Les variables d'environnement FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM doivent être définies")
+HAS_FFTT_CONFIG = all([MOTDEPASSE, ID_APP, SERIE, CLUB_NUM])
 # ============================
 
 app = Flask(__name__)
 CORS(app)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+if not HAS_FFTT_CONFIG:
+    logging.warning(
+        "Variables FFTT manquantes. L'application peut s'afficher, mais les appels API FFTT seront indisponibles tant que FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM ne sont pas définies."
+    )
 
 
 def generate_auth_params():
@@ -47,6 +50,9 @@ def generate_auth_params():
 
 
 def make_request(endpoint, additional_params=None, timeout=30):
+    if not HAS_FFTT_CONFIG:
+        logging.error("Configuration FFTT manquante: impossible d'appeler %s", endpoint)
+        return None
     params = generate_auth_params()
     if additional_params:
         params.update(additional_params)
@@ -193,6 +199,11 @@ def api_search_club():
 def api_results():
     """Récupère la progression des joueurs via pointm - point"""
     from flask import request
+    if not HAS_FFTT_CONFIG:
+        return jsonify({
+            "success": False,
+            "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM dans les variables d'environnement."
+        }), 500
     club_num = request.args.get('club', CLUB_NUM)
     try:
         min_progression = int(request.args.get('gain', request.args.get('ecart', 0)))
@@ -211,6 +222,11 @@ def api_results():
 def download_results():
     """Télécharge les résultats"""
     from flask import request, make_response
+    if not HAS_FFTT_CONFIG:
+        return jsonify({
+            "success": False,
+            "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM dans les variables d'environnement."
+        }), 500
     club_num = request.args.get('club', CLUB_NUM)
     try:
         min_progression = int(request.args.get('gain', request.args.get('ecart', 0)))
