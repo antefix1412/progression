@@ -148,7 +148,7 @@ def get_club_licence_details(club_num=None):
             prenom = node.findtext("prenom")
             point = parse_points(node.findtext("point"))
 
-            if not licence_number or not nom or not prenom or point is None:
+            if not licence_number or not nom or not prenom:
                 continue
 
             licence_nodes.append({
@@ -187,6 +187,8 @@ def get_club_licence_details(club_num=None):
                     continue
                 if points_reference is None:
                     points_reference = player["point"]
+                if points_reference is None:
+                    points_reference = ranking_details.get("point")
 
                 players.append({
                     "licence": player["licence"],
@@ -285,7 +287,7 @@ def api_results():
 
     try:
         results = get_results(club_num=club_num)
-        return jsonify({"success": True, "data": results, "count": len(results)})
+        return jsonify({"success": True, "data": results, "count": len(results), "club": club_num})
     except FFTTApiError as e:
         logging.error(f"Erreur FFTT lors de la récupération des résultats: {e}")
         return jsonify({"success": False, "error": str(e)}), 502

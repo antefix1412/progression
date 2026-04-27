@@ -136,7 +136,7 @@ def get_club_licence_details(club_num=None):
             prenom = node.findtext("prenom")
             point = parse_points(node.findtext("point"))
 
-            if not licence_number or not nom or not prenom or point is None:
+            if not licence_number or not nom or not prenom:
                 continue
 
             ranking_details = get_player_ranking_details(licence_number.strip())
@@ -146,6 +146,8 @@ def get_club_licence_details(club_num=None):
                 continue
             if points_reference is None:
                 points_reference = point
+            if points_reference is None:
+                points_reference = ranking_details.get("point")
 
             players.append({
                 "licence": licence_number.strip(),

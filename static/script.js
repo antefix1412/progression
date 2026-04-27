@@ -33,7 +33,7 @@ async function loadResults() {
             displayResults(preparedResults);
             
             if (preparedResults.length === 0) {
-                updateInfoPanel('Aucun joueur ne correspond au filtre en cours.', 'warning');
+                updateInfoPanel(`Aucun joueur affiche. API: ${data.count} joueur(s) charge(s) pour le club ${data.club || 'inconnu'}.`, 'warning');
                 updateStatus('Aucun résultat trouvé');
             } else {
                 updateInfoPanel(`${preparedResults.length} joueur(s) affiché(s) sur ${data.count} chargé(s)`, 'success');
