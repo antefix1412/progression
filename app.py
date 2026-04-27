@@ -35,6 +35,7 @@ ID_APP = get_env("FFTT_ID_APP", "ID_APP")
 SERIE = get_env("FFTT_SERIE", "SERIE")
 CLUB_NUM = get_env("FFTT_CLUB_NUM", "CLUB_NUM", "NUM_CLUB")
 BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
+JOUEUR_BASE_URL = "https://www.fftt.com/mobile/pxml/"
 PLAYER_REQUEST_DELAY_SECONDS = 0.5
 
 HAS_FFTT_AUTH = all([MOTDEPASSE, ID_APP, SERIE])
@@ -87,14 +88,14 @@ def generate_auth_params():
     return {'serie': SERIE, 'tm': timestamp, 'tmc': tmc, 'id': ID_APP}
 
 
-def make_request(endpoint, additional_params=None, timeout=30, use_new_session=False, close_connection=False):
+def make_request(endpoint, additional_params=None, timeout=30, use_new_session=False, close_connection=False, base_url=BASE_URL):
     if not HAS_FFTT_AUTH:
         logging.error("Configuration FFTT manquante: impossible d'appeler %s", endpoint)
         return None
     params = generate_auth_params()
     if additional_params:
         params.update(additional_params)
-    url = f"{BASE_URL}{endpoint}"
+    url = f"{base_url}{endpoint}"
     try:
         headers = {"Connection": "close"} if close_connection else None
         if use_new_session:
@@ -130,6 +131,7 @@ def get_player_clpro(licence):
             timeout=20,
             use_new_session=True,
             close_connection=True,
+            base_url=JOUEUR_BASE_URL,
         )
         if content:
             try:
@@ -159,6 +161,46 @@ def get_club_licence_details(club_num=None):
     content = make_request("xml_licence_b.php", {"club": target_club})
     if not content:
         return []
+
+
+def get_player_details_xml_joueur(licence):
+    content = make_request(
+        "xml_joueur.php",
+        {"licence": licence, "auto": "1"},
+        timeout=20,
+        use_new_session=True,
+        close_connection=True,
+        base_url=JOUEUR_BASE_URL,
+    )
+    if not content:
+        raise ValueError(f"Impossible de recuperer xml_joueur pour la licence {licence}")
+
+    try:
+        root = ET.fromstring(content)
+        if extract_api_error(root):
+            raise ValueError(f"Erreur FFTT sur xml_joueur pour la licence {licence}")
+
+        joueur = root.find(".//joueur")
+        if joueur is None:
+            raise ValueError(f"Aucune fiche joueur trouvee pour la licence {licence}")
+
+        clpro = parse_points(joueur.findtext("clpro"))
+        valinit = parse_points(joueur.findtext("valinit"))
+        if clpro is None or valinit is None:
+            raise ValueError(f"clpro ou valinit manquant pour la licence {licence}")
+
+        return {
+            "licence": (joueur.findtext("licence") or licence).strip(),
+            "nom": (joueur.findtext("nom") or "").strip(),
+            "prenom": (joueur.findtext("prenom") or "").strip(),
+            "club": (joueur.findtext("club") or "").strip(),
+            "nclub": (joueur.findtext("nclub") or "").strip(),
+            "clpro": clpro,
+            "valinit": valinit,
+            "progression": clpro - valinit,
+        }
+    except ET.ParseError as e:
+        raise ValueError(f"Reponse XML invalide pour la licence {licence}: {e}") from e
     try:
         root = ET.fromstring(content)
         if extract_api_error(root):
@@ -287,6 +329,22 @@ def api_results():
         return jsonify({"success": True, "data": results, "count": len(results)})
     except Exception as e:
         logging.error(f"Erreur lors de la récupération des résultats: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/test-joueur')
+def api_test_joueur():
+    from flask import request
+
+    licence = request.args.get('licence', '').strip()
+    if not licence:
+        return jsonify({"success": False, "error": "Paramètre licence obligatoire"}), 400
+
+    try:
+        joueur = get_player_details_xml_joueur(licence)
+        return jsonify({"success": True, "data": joueur})
+    except Exception as e:
+        logging.error(f"Erreur test xml_joueur: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
