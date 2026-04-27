@@ -86,6 +86,32 @@ def parse_points(value) -> Optional[int]:
         return None
 
 
+def get_player_ranking_details(licence):
+    content = make_request("xml_joueur.php", {"licence": licence})
+    if not content:
+        return {}
+    try:
+        root = ET.fromstring(content)
+        if root.findtext("error"):
+            return {}
+
+        joueur = root.find(".//joueur")
+        if joueur is None:
+            return {}
+
+        clpro = parse_points(joueur.findtext("clpro"))
+        valcla = parse_points(joueur.findtext("valcla"))
+        point = parse_points(joueur.findtext("point"))
+        return {
+            "clpro": clpro,
+            "valcla": valcla,
+            "point": point,
+        }
+    except ET.ParseError as e:
+        logging.error(f"Erreur parsing XML joueur : {e}\n{content}")
+        return {}
+
+
 def get_club_licence_details(club_num=None):
     target_club = club_num if club_num else CLUB_NUM
     content = make_request("xml_licence_b.php", {"club": target_club})
@@ -102,21 +128,28 @@ def get_club_licence_details(club_num=None):
             nom = node.findtext("nom")
             prenom = node.findtext("prenom")
             point = parse_points(node.findtext("point"))
-            pointm = parse_points(node.findtext("pointm"))
 
-            if not licence_number or not nom or not prenom or point is None or pointm is None:
+            if not licence_number or not nom or not prenom or point is None:
                 continue
+
+            ranking_details = get_player_ranking_details(licence_number.strip())
+            clpro = ranking_details.get("clpro")
+            points_reference = ranking_details.get("valcla")
+            if clpro is None:
+                continue
+            if points_reference is None:
+                points_reference = point
 
             players.append({
                 "licence": licence_number.strip(),
                 "nom": nom.strip(),
                 "prenom": prenom.strip(),
-                "points_classement": point,
-                "points_mensuels": pointm,
-                "progression": pointm - point,
+                "points_classement": points_reference,
+                "points_proposes": clpro,
+                "progression": clpro - points_reference,
             })
 
-        logging.info(f"{len(players)} licences récupérées via xml_licence_b pour le club {target_club}")
+        logging.info(f"{len(players)} joueurs récupérés pour le club {target_club}")
         return players
     except ET.ParseError as e:
         logging.error(f"Erreur parsing XML licence_b : {e}\n{content}")
@@ -223,7 +256,7 @@ def download_results():
         for r in results:
             line = (
                 f"{r['prenom']} {r['nom']} | classement: {r['points_classement']} "
-                f"| mensuels: {r['points_mensuels']} | progression: {r['progression']:+d}"
+                f"| proposes: {r['points_proposes']} | progression: {r['progression']:+d}"
             )
             lines.append(line)
         

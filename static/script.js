@@ -39,7 +39,7 @@ async function loadResults() {
                 updateInfoPanel('Aucun joueur ne correspond au filtre en cours.', 'warning');
                 updateStatus('Aucun résultat trouvé');
             } else {
-                updateInfoPanel(`${data.count} joueur(s) chargé(s) avec leur progression mensuelle`, 'success');
+                updateInfoPanel(`${data.count} joueur(s) chargé(s) avec leur progression proposée`, 'success');
                 updateStatus(`${data.count} joueur(s) chargé(s)`);
             }
             
@@ -78,7 +78,7 @@ function displayResults(results) {
             <td>${escapeHtml(result.prenom)}</td>
             <td>${escapeHtml(result.nom)}</td>
             <td>${result.points_classement}</td>
-            <td>${result.points_mensuels}</td>
+            <td>${result.points_proposes}</td>
             <td><span class="ecart-badge">${formatProgression(result.progression)}</span></td>
         `;
         resultsBody.appendChild(row);
@@ -100,8 +100,8 @@ function displayResults(results) {
                 <span class="card-value">${result.points_classement}</span>
             </div>
             <div class="card-row">
-                <span class="card-label">Points mensuels:</span>
-                <span class="card-value">${result.points_mensuels}</span>
+                <span class="card-label">Points proposes:</span>
+                <span class="card-value">${result.points_proposes}</span>
             </div>
             <div class="card-row">
                 <span class="card-label">Progression:</span>
@@ -116,12 +116,12 @@ function displayResults(results) {
 function copyAllResults() {
     if (currentResults.length === 0) return;
     
-    const header = "Licence\tPrénom\tNom\tPoints classement\tPoints mensuels\tProgression";
+    const header = "Licence\tPrénom\tNom\tPoints classement\tPoints proposes\tProgression";
     const separator = "-".repeat(80);
     const lines = [header, separator];
     
     currentResults.forEach(r => {
-        const line = `${r.licence}\t${r.prenom}\t${r.nom}\t${r.points_classement}\t${r.points_mensuels}\t${formatProgression(r.progression)}`;
+        const line = `${r.licence}\t${r.prenom}\t${r.nom}\t${r.points_classement}\t${r.points_proposes}\t${formatProgression(r.progression)}`;
         lines.push(line);
     });
     
