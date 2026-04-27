@@ -115,32 +115,6 @@ def parse_points(value) -> Optional[int]:
         return None
 
 
-def get_player_ranking_details(licence):
-    content = make_request("xml_joueur.php", {"licence": licence, "auto": "1"})
-    if not content:
-        return {}
-    try:
-        root = ET.fromstring(content)
-        if extract_api_error(root):
-            return {}
-
-        joueur = root.find(".//joueur")
-        if joueur is None:
-            return {}
-
-        clpro = parse_points(joueur.findtext("clpro"))
-        valcla = parse_points(joueur.findtext("valcla"))
-        point = parse_points(joueur.findtext("point"))
-        return {
-            "clpro": clpro,
-            "valcla": valcla,
-            "point": point,
-        }
-    except ET.ParseError as e:
-        logging.error(f"Erreur parsing XML joueur : {e}\n{content}")
-        return {}
-
-
 def get_club_licence_details(club_num=None):
     target_club = resolve_club_num(club_num)
     content = make_request("xml_licence_b.php", {"club": target_club})
@@ -157,19 +131,16 @@ def get_club_licence_details(club_num=None):
             nom = node.findtext("nom")
             prenom = node.findtext("prenom")
             point = parse_points(node.findtext("point"))
+            pointm = parse_points(node.findtext("pointm"))
+            apointm = parse_points(node.findtext("apointm"))
 
             if not licence_number or not nom or not prenom:
                 continue
 
-            ranking_details = get_player_ranking_details(licence_number.strip())
-            clpro = ranking_details.get("clpro")
-            points_reference = ranking_details.get("valcla")
-            if clpro is None:
+            points_reference = pointm if pointm is not None else point
+            clpro = apointm if apointm is not None else point
+            if points_reference is None or clpro is None:
                 continue
-            if points_reference is None:
-                points_reference = point
-            if points_reference is None:
-                points_reference = ranking_details.get("point")
 
             players.append({
                 "licence": licence_number.strip(),

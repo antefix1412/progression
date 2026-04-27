@@ -16,7 +16,6 @@ import hmac
 from datetime import datetime
 import logging
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ========== CONFIG ==========
 # Charger les variables d'environnement
@@ -136,32 +135,6 @@ def parse_points(value) -> Optional[int]:
         return None
 
 
-def get_player_ranking_details(licence):
-    content = make_request("xml_joueur.php", {"licence": licence, "auto": "1"})
-    try:
-        root = ET.fromstring(content)
-        api_error = extract_api_error(root)
-        if api_error:
-            raise FFTTApiError(f"Erreur FFTT pour la licence {licence}: {api_error}")
-
-        joueur = root.find(".//joueur")
-        if joueur is None:
-            raise FFTTApiError(f"Aucune fiche joueur trouvee pour la licence {licence}")
-
-        clpro = parse_points(joueur.findtext("clpro"))
-        valcla = parse_points(joueur.findtext("valcla"))
-        point = parse_points(joueur.findtext("point"))
-        return {
-            "clpro": clpro,
-            "valcla": valcla,
-            "point": point,
-        }
-    except ET.ParseError as e:
-        message = f"Reponse XML invalide pour la licence {licence}: {e}"
-        logging.error(f"{message}\n{content}")
-        raise FFTTApiError(message) from e
-
-
 def get_club_licence_details(club_num=None):
     target_club = resolve_club_num(club_num)
     content = make_request("xml_licence_b.php", {"club": target_club})
@@ -171,74 +144,35 @@ def get_club_licence_details(club_num=None):
         if api_error:
             raise FFTTApiError(f"Erreur FFTT pour le club {target_club}: {api_error}")
 
-        licence_nodes = []
+        players = []
         for node in root.findall(".//licence"):
             licence_number = node.findtext("licence")
             nom = node.findtext("nom")
             prenom = node.findtext("prenom")
             point = parse_points(node.findtext("point"))
+            pointm = parse_points(node.findtext("pointm"))
+            apointm = parse_points(node.findtext("apointm"))
 
             if not licence_number or not nom or not prenom:
                 continue
 
-            licence_nodes.append({
+            points_classement = pointm if pointm is not None else point
+            points_proposes = apointm if apointm is not None else point
+
+            if points_classement is None or points_proposes is None:
+                continue
+
+            players.append({
                 "licence": licence_number.strip(),
                 "nom": nom.strip(),
                 "prenom": prenom.strip(),
-                "point": point,
+                "points_classement": points_classement,
+                "points_proposes": points_proposes,
             })
 
-        if not licence_nodes:
+        if not players:
             logging.info(f"Aucun joueur renvoye pour le club {target_club}")
             return []
-
-        players = []
-        ranking_errors = []
-        max_workers = min(8, len(licence_nodes))
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_map = {
-                executor.submit(get_player_ranking_details, item["licence"]): item
-                for item in licence_nodes
-            }
-
-            for future in as_completed(future_map):
-                player = future_map[future]
-                try:
-                    ranking_details = future.result()
-                except FFTTApiError as exc:
-                    ranking_errors.append(f"{player['licence']}: {exc}")
-                    continue
-
-                clpro = ranking_details.get("clpro")
-                points_reference = ranking_details.get("valcla")
-                if clpro is None:
-                    ranking_errors.append(f"{player['licence']}: clpro manquant")
-                    continue
-                if points_reference is None:
-                    points_reference = player["point"]
-                if points_reference is None:
-                    points_reference = ranking_details.get("point")
-
-                players.append({
-                    "licence": player["licence"],
-                    "nom": player["nom"],
-                    "prenom": player["prenom"],
-                    "points_classement": points_reference,
-                    "points_proposes": clpro,
-                })
-
-        if ranking_errors:
-            logging.warning(
-                "%s detail(s) joueur FFTT indisponible(s) pour le club %s",
-                len(ranking_errors),
-                target_club,
-            )
-
-        if not players:
-            raise FFTTApiError(
-                f"Les details de classement n'ont pas pu etre recuperes pour les {len(licence_nodes)} joueur(s) du club {target_club}."
-            )
 
         logging.info(f"{len(players)} joueurs récupérés pour le club {target_club}")
         return players
