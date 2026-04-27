@@ -10,6 +10,7 @@ import hmac
 from datetime import datetime
 import logging
 import os
+import time
 from typing import Optional
 
 # ========== CONFIG ==========
@@ -34,6 +35,7 @@ ID_APP = get_env("FFTT_ID_APP", "ID_APP")
 SERIE = get_env("FFTT_SERIE", "SERIE")
 CLUB_NUM = get_env("FFTT_CLUB_NUM", "CLUB_NUM", "NUM_CLUB")
 BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
+PLAYER_REQUEST_DELAY_SECONDS = 0.5
 
 HAS_FFTT_AUTH = all([MOTDEPASSE, ID_APP, SERIE])
 # ============================
@@ -85,7 +87,7 @@ def generate_auth_params():
     return {'serie': SERIE, 'tm': timestamp, 'tmc': tmc, 'id': ID_APP}
 
 
-def make_request(endpoint, additional_params=None, timeout=30):
+def make_request(endpoint, additional_params=None, timeout=30, use_new_session=False, close_connection=False):
     if not HAS_FFTT_AUTH:
         logging.error("Configuration FFTT manquante: impossible d'appeler %s", endpoint)
         return None
@@ -94,7 +96,12 @@ def make_request(endpoint, additional_params=None, timeout=30):
         params.update(additional_params)
     url = f"{BASE_URL}{endpoint}"
     try:
-        resp = requests.get(url, params=params, timeout=timeout)
+        headers = {"Connection": "close"} if close_connection else None
+        if use_new_session:
+            with requests.Session() as session:
+                resp = session.get(url, params=params, timeout=timeout, headers=headers)
+        else:
+            resp = requests.get(url, params=params, timeout=timeout, headers=headers)
         resp.raise_for_status()
         resp.encoding = "latin-1"
         return resp.text
@@ -115,6 +122,38 @@ def parse_points(value) -> Optional[int]:
         return None
 
 
+def get_player_clpro(licence):
+    for _ in range(2):
+        content = make_request(
+            "xml_joueur.php",
+            {"licence": licence, "auto": "1"},
+            timeout=20,
+            use_new_session=True,
+            close_connection=True,
+        )
+        if content:
+            try:
+                root = ET.fromstring(content)
+                if extract_api_error(root):
+                    time.sleep(PLAYER_REQUEST_DELAY_SECONDS)
+                    continue
+
+                joueur = root.find(".//joueur")
+                if joueur is None:
+                    time.sleep(PLAYER_REQUEST_DELAY_SECONDS)
+                    continue
+
+                clpro = parse_points(joueur.findtext("clpro"))
+                if clpro is not None:
+                    return clpro
+            except ET.ParseError:
+                pass
+
+        time.sleep(PLAYER_REQUEST_DELAY_SECONDS)
+
+    return None
+
+
 def get_club_licence_details(club_num=None):
     target_club = resolve_club_num(club_num)
     content = make_request("xml_licence_b.php", {"club": target_club})
@@ -126,27 +165,36 @@ def get_club_licence_details(club_num=None):
             return []
 
         players = []
+        last_call_at = None
         for node in root.findall(".//licence"):
             licence_number = node.findtext("licence")
             nom = node.findtext("nom")
             prenom = node.findtext("prenom")
             point = parse_points(node.findtext("point"))
-            pointm = parse_points(node.findtext("pointm"))
-            apointm = parse_points(node.findtext("apointm"))
 
             if not licence_number or not nom or not prenom:
                 continue
 
-            points_reference = pointm if pointm is not None else point
-            clpro = apointm if apointm is not None else point
-            if points_reference is None or clpro is None:
+            if point is None:
+                continue
+
+            now = time.monotonic()
+            if last_call_at is not None:
+                remaining = PLAYER_REQUEST_DELAY_SECONDS - (now - last_call_at)
+                if remaining > 0:
+                    time.sleep(remaining)
+
+            clpro = get_player_clpro(licence_number.strip())
+            last_call_at = time.monotonic()
+
+            if clpro is None:
                 continue
 
             players.append({
                 "licence": licence_number.strip(),
                 "nom": nom.strip(),
                 "prenom": prenom.strip(),
-                "points_classement": points_reference,
+                "points_classement": point,
                 "points_proposes": clpro,
             })
 

@@ -15,6 +15,7 @@ import hashlib
 import hmac
 from datetime import datetime
 import logging
+import time
 from typing import Optional
 
 # ========== CONFIG ==========
@@ -30,6 +31,7 @@ ID_APP = os.getenv("FFTT_ID_APP")
 SERIE = os.getenv("FFTT_SERIE")
 CLUB_NUM = os.getenv("FFTT_CLUB_NUM")
 BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
+PLAYER_REQUEST_DELAY_SECONDS = 0.5
 
 def get_env(*names):
     for name in names:
@@ -103,7 +105,7 @@ def generate_auth_params():
     return {'serie': SERIE, 'tm': timestamp, 'tmc': tmc, 'id': ID_APP}
 
 
-def make_request(endpoint, additional_params=None, timeout=30):
+def make_request(endpoint, additional_params=None, timeout=30, use_new_session=False, close_connection=False):
     if not HAS_FFTT_AUTH:
         raise FFTTApiError(
             "Configuration FFTT manquante. Definis FFTT_PASSWORD, FFTT_ID_APP et FFTT_SERIE dans les variables d'environnement."
@@ -113,7 +115,12 @@ def make_request(endpoint, additional_params=None, timeout=30):
         params.update(additional_params)
     url = f"{BASE_URL}{endpoint}"
     try:
-        resp = requests.get(url, params=params, timeout=timeout)
+        headers = {"Connection": "close"} if close_connection else None
+        if use_new_session:
+            with requests.Session() as session:
+                resp = session.get(url, params=params, timeout=timeout, headers=headers)
+        else:
+            resp = requests.get(url, params=params, timeout=timeout, headers=headers)
         resp.raise_for_status()
         resp.encoding = "latin-1"
         return resp.text
@@ -135,6 +142,37 @@ def parse_points(value) -> Optional[int]:
         return None
 
 
+def get_player_clpro(licence):
+    last_error = None
+    for _ in range(2):
+        try:
+            content = make_request(
+                "xml_joueur.php",
+                {"licence": licence, "auto": "1"},
+                timeout=20,
+                use_new_session=True,
+                close_connection=True,
+            )
+            root = ET.fromstring(content)
+            api_error = extract_api_error(root)
+            if api_error:
+                raise FFTTApiError(f"Erreur FFTT pour la licence {licence}: {api_error}")
+
+            joueur = root.find(".//joueur")
+            if joueur is None:
+                raise FFTTApiError(f"Aucune fiche joueur trouvee pour la licence {licence}")
+
+            clpro = parse_points(joueur.findtext("clpro"))
+            if clpro is None:
+                raise FFTTApiError(f"clpro manquant pour la licence {licence}")
+            return clpro
+        except (ET.ParseError, FFTTApiError) as exc:
+            last_error = exc
+        time.sleep(PLAYER_REQUEST_DELAY_SECONDS)
+
+    raise FFTTApiError(str(last_error) if last_error else f"Impossible de recuperer clpro pour {licence}")
+
+
 def get_club_licence_details(club_num=None):
     target_club = resolve_club_num(club_num)
     content = make_request("xml_licence_b.php", {"club": target_club})
@@ -145,34 +183,54 @@ def get_club_licence_details(club_num=None):
             raise FFTTApiError(f"Erreur FFTT pour le club {target_club}: {api_error}")
 
         players = []
+        ranking_errors = []
+        last_call_at = None
         for node in root.findall(".//licence"):
             licence_number = node.findtext("licence")
             nom = node.findtext("nom")
             prenom = node.findtext("prenom")
             point = parse_points(node.findtext("point"))
-            pointm = parse_points(node.findtext("pointm"))
-            apointm = parse_points(node.findtext("apointm"))
 
             if not licence_number or not nom or not prenom:
                 continue
 
-            points_classement = pointm if pointm is not None else point
-            points_proposes = apointm if apointm is not None else point
-
-            if points_classement is None or points_proposes is None:
+            if point is None:
                 continue
+
+            now = time.monotonic()
+            if last_call_at is not None:
+                remaining = PLAYER_REQUEST_DELAY_SECONDS - (now - last_call_at)
+                if remaining > 0:
+                    time.sleep(remaining)
+
+            try:
+                clpro = get_player_clpro(licence_number.strip())
+            except FFTTApiError as exc:
+                ranking_errors.append(f"{licence_number.strip()}: {exc}")
+                last_call_at = time.monotonic()
+                continue
+
+            last_call_at = time.monotonic()
 
             players.append({
                 "licence": licence_number.strip(),
                 "nom": nom.strip(),
                 "prenom": prenom.strip(),
-                "points_classement": points_classement,
-                "points_proposes": points_proposes,
+                "points_classement": point,
+                "points_proposes": clpro,
             })
 
+        if ranking_errors:
+            logging.warning(
+                "%s detail(s) xml_joueur indisponible(s) pour le club %s",
+                len(ranking_errors),
+                target_club,
+            )
+
         if not players:
-            logging.info(f"Aucun joueur renvoye pour le club {target_club}")
-            return []
+            raise FFTTApiError(
+                f"Aucun joueur exploitable: xml_joueur est indisponible pour toutes les licences du club {target_club}."
+            )
 
         logging.info(f"{len(players)} joueurs récupérés pour le club {target_club}")
         return players
