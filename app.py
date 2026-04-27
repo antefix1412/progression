@@ -10,6 +10,7 @@ import hmac
 from datetime import datetime
 import logging
 import os
+from typing import Optional
 
 # ========== CONFIG ==========
 # Charger les variables d'environnement depuis .env (en développement)
@@ -63,7 +64,7 @@ def make_request(endpoint, additional_params=None, timeout=30):
         return None
 
 
-def parse_points(value) -> int | None:
+def parse_points(value) -> Optional[int]:
     if value is None:
         return None
     cleaned = str(value).strip().replace(",", ".")

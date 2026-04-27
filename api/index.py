@@ -15,6 +15,7 @@ import hashlib
 import hmac
 from datetime import datetime
 import logging
+from typing import Optional
 
 # ========== CONFIG ==========
 # Charger les variables d'environnement
@@ -76,7 +77,7 @@ def make_request(endpoint, additional_params=None, timeout=30):
         return None
 
 
-def parse_points(value) -> int | None:
+def parse_points(value) -> Optional[int]:
     if value is None:
         return None
     cleaned = str(value).strip().replace(",", ".")
@@ -240,3 +241,7 @@ def download_results():
     except Exception as e:
         logging.error(f"Erreur lors du téléchargement: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# Export explicite pour Vercel
+app = app
