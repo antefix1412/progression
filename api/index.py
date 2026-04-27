@@ -56,6 +56,20 @@ class FFTTApiError(Exception):
     pass
 
 
+def extract_api_error(root):
+    if root is None:
+        return None
+    if root.tag and root.tag.lower() == "error":
+        return (root.text or "").strip() or "Erreur FFTT inconnue"
+    error_text = root.findtext("error")
+    if error_text:
+        return error_text.strip()
+    nested_error = root.find(".//error")
+    if nested_error is not None:
+        return (nested_error.text or "").strip() or "Erreur FFTT inconnue"
+    return None
+
+
 def generate_auth_params():
     now = datetime.now()
     timestamp = now.strftime("%Y%m%d%H%M%S") + f"{now.microsecond // 1000:03d}"
@@ -96,7 +110,7 @@ def get_player_ranking_details(licence):
     content = make_request("xml_joueur.php", {"licence": licence})
     try:
         root = ET.fromstring(content)
-        api_error = root.findtext("error")
+        api_error = extract_api_error(root)
         if api_error:
             raise FFTTApiError(f"Erreur FFTT pour la licence {licence}: {api_error}")
 
@@ -123,7 +137,7 @@ def get_club_licence_details(club_num=None):
     content = make_request("xml_licence_b.php", {"club": target_club})
     try:
         root = ET.fromstring(content)
-        api_error = root.findtext("error")
+        api_error = extract_api_error(root)
         if api_error:
             raise FFTTApiError(f"Erreur FFTT pour le club {target_club}: {api_error}")
 
@@ -206,10 +220,11 @@ def get_club_licence_details(club_num=None):
 def search_club_by_name(club_name):
     content = make_request('xml_club_b.php', {'nom': club_name})
     clubs = []
-    if not content:
-        return clubs
     try:
         root = ET.fromstring(content)
+        api_error = extract_api_error(root)
+        if api_error:
+            raise FFTTApiError(f"Erreur FFTT pour la recherche de club '{club_name}': {api_error}")
         for club in root.findall('club'):
             numero = club.findtext('numero')
             nom = club.findtext('nom')
@@ -222,7 +237,9 @@ def search_club_by_name(club_name):
                 })
         logging.info(f"{len(clubs)} clubs trouvés pour '{club_name}'")
     except ET.ParseError as e:
-        logging.error(f"Erreur parsing XML clubs : {e}\n{content}")
+        message = f"Reponse XML invalide pour la recherche de club '{club_name}': {e}"
+        logging.error(f"{message}\n{content}")
+        raise FFTTApiError(message) from e
     return clubs
 
 

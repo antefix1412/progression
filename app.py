@@ -41,6 +41,20 @@ if not HAS_FFTT_CONFIG:
     )
 
 
+def extract_api_error(root):
+    if root is None:
+        return None
+    if root.tag and root.tag.lower() == "error":
+        return (root.text or "").strip() or "Erreur FFTT inconnue"
+    error_text = root.findtext("error")
+    if error_text:
+        return error_text.strip()
+    nested_error = root.find(".//error")
+    if nested_error is not None:
+        return (nested_error.text or "").strip() or "Erreur FFTT inconnue"
+    return None
+
+
 def generate_auth_params():
     now = datetime.now()
     timestamp = now.strftime("%Y%m%d%H%M%S") + f"{now.microsecond // 1000:03d}"
@@ -85,7 +99,7 @@ def get_player_ranking_details(licence):
         return {}
     try:
         root = ET.fromstring(content)
-        if root.findtext("error"):
+        if extract_api_error(root):
             return {}
 
         joueur = root.find(".//joueur")
@@ -112,7 +126,7 @@ def get_club_licence_details(club_num=None):
         return []
     try:
         root = ET.fromstring(content)
-        if root.findtext("error"):
+        if extract_api_error(root):
             return []
 
         players = []
@@ -157,6 +171,8 @@ def search_club_by_name(club_name):
         return clubs
     try:
         root = ET.fromstring(content)
+        if extract_api_error(root):
+            return clubs
         for club in root.findall('club'):
             numero = club.findtext('numero')
             nom = club.findtext('nom')
