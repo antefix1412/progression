@@ -10,7 +10,6 @@ const infoText = document.getElementById('infoText');
 const loadingSpinner = document.getElementById('loadingSpinner');
 const statusDiv = document.getElementById('status');
 const ecartMinInput = document.getElementById('ecartMin');
-const modeCalculSelect = document.getElementById('modeCalcul');
 
 // Event Listeners
 loadBtn.addEventListener('click', loadResults);
@@ -25,8 +24,7 @@ async function loadResults() {
     updateInfoPanel('Chargement en cours...', 'info');
     
     try {
-        const selectedMode = modeCalculSelect ? modeCalculSelect.value : 'point';
-        const response = await fetch(`/api/results?mode=${encodeURIComponent(selectedMode)}`);
+        const response = await fetch('/api/results');
         const contentType = response.headers.get('content-type') || '';
         if (!response.ok) {
             const errorText = await response.text();
@@ -56,8 +54,7 @@ async function loadResults() {
                 updateStatus('Aucun résultat trouvé');
             } else {
                 const formula = data.formula ? ` | ${data.formula}` : '';
-                const truncation = data.truncated ? ` | partiel: ${data.processed || data.count}/${data.available || data.count}` : '';
-                updateInfoPanel(`${preparedResults.length} joueur(s) affiché(s) sur ${data.count} chargé(s)${formula}${truncation}`, 'success');
+                updateInfoPanel(`${preparedResults.length} joueur(s) affiché(s) sur ${data.count} chargé(s)${formula}`, 'success');
                 updateStatus(`${preparedResults.length} joueur(s) affiché(s)`);
             }
             

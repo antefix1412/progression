@@ -123,121 +123,36 @@ def parse_points(value) -> Optional[int]:
         return None
 
 
-def get_player_clpro(licence):
-    for _ in range(2):
-        content = make_request(
-            "xml_joueur.php",
-            {"licence": licence, "auto": "1"},
-            timeout=20,
-            use_new_session=True,
-            close_connection=True,
-            base_url=JOUEUR_BASE_URL,
-        )
-        if content:
-            try:
-                root = ET.fromstring(content)
-                if extract_api_error(root):
-                    time.sleep(PLAYER_REQUEST_DELAY_SECONDS)
-                    continue
-
-                joueur = root.find(".//joueur")
-                if joueur is None:
-                    time.sleep(PLAYER_REQUEST_DELAY_SECONDS)
-                    continue
-
-                clpro = parse_points(joueur.findtext("clpro"))
-                if clpro is not None:
-                    return clpro
-            except ET.ParseError:
-                pass
-
-        time.sleep(PLAYER_REQUEST_DELAY_SECONDS)
-
-    return None
-
-
 def get_club_licence_details(club_num=None):
     target_club = resolve_club_num(club_num)
     content = make_request("xml_licence_b.php", {"club": target_club})
     if not content:
         return []
-
-
-def get_player_details_xml_joueur(licence):
-    content = make_request(
-        "xml_joueur.php",
-        {"licence": licence, "auto": "1"},
-        timeout=20,
-        use_new_session=True,
-        close_connection=True,
-        base_url=JOUEUR_BASE_URL,
-    )
-    if not content:
-        raise ValueError(f"Impossible de recuperer xml_joueur pour la licence {licence}")
-
-    try:
-        root = ET.fromstring(content)
-        if extract_api_error(root):
-            raise ValueError(f"Erreur FFTT sur xml_joueur pour la licence {licence}")
-
-        joueur = root.find(".//joueur")
-        if joueur is None:
-            raise ValueError(f"Aucune fiche joueur trouvee pour la licence {licence}")
-
-        clpro = parse_points(joueur.findtext("clpro"))
-        valinit = parse_points(joueur.findtext("valinit"))
-        if clpro is None or valinit is None:
-            raise ValueError(f"clpro ou valinit manquant pour la licence {licence}")
-
-        return {
-            "licence": (joueur.findtext("licence") or licence).strip(),
-            "nom": (joueur.findtext("nom") or "").strip(),
-            "prenom": (joueur.findtext("prenom") or "").strip(),
-            "club": (joueur.findtext("club") or "").strip(),
-            "nclub": (joueur.findtext("nclub") or "").strip(),
-            "clpro": clpro,
-            "valinit": valinit,
-            "progression": clpro - valinit,
-        }
-    except ET.ParseError as e:
-        raise ValueError(f"Reponse XML invalide pour la licence {licence}: {e}") from e
     try:
         root = ET.fromstring(content)
         if extract_api_error(root):
             return []
 
         players = []
-        last_call_at = None
         for node in root.findall(".//licence"):
             licence_number = node.findtext("licence")
             nom = node.findtext("nom")
             prenom = node.findtext("prenom")
-            point = parse_points(node.findtext("point"))
+            pointm = parse_points(node.findtext("pointm"))
+            initm = parse_points(node.findtext("initm"))
 
             if not licence_number or not nom or not prenom:
                 continue
 
-            if point is None:
-                continue
-
-            now = time.monotonic()
-            if last_call_at is not None:
-                remaining = PLAYER_REQUEST_DELAY_SECONDS - (now - last_call_at)
-                if remaining > 0:
-                    time.sleep(remaining)
-
-            clpro = get_player_clpro(licence_number.strip())
-            last_call_at = time.monotonic()
-
-            if clpro is None:
+            if pointm is None or initm is None:
                 continue
 
             players.append({
                 "licence": licence_number.strip(),
                 "nom": nom.strip(),
                 "prenom": prenom.strip(),
-                "points_classement": point,
-                "points_proposes": clpro,
+                "points_classement": initm,
+                "points_proposes": pointm,
             })
 
         logging.info(f"{len(players)} joueurs récupérés pour le club {target_club}")

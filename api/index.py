@@ -247,21 +247,21 @@ def get_club_licence_rows(club_num=None):
             licence_number = node.findtext("licence")
             nom = node.findtext("nom")
             prenom = node.findtext("prenom")
-            point = parse_points(node.findtext("point"))
-            apointm = parse_points(node.findtext("apointm"))
+            pointm = parse_points(node.findtext("pointm"))
+            initm = parse_points(node.findtext("initm"))
 
             if not licence_number or not nom or not prenom:
                 continue
 
-            if point is None:
+            if pointm is None or initm is None:
                 continue
 
             licence_rows.append({
                 "licence": licence_number.strip(),
                 "nom": nom.strip(),
                 "prenom": prenom.strip(),
-                "point": point,
-                "apointm": apointm,
+                "pointm": pointm,
+                "initm": initm,
             })
 
         if not licence_rows:
@@ -279,20 +279,17 @@ def build_results_point(club_num=None):
     rows, resolved_club = get_club_licence_rows(club_num)
     players = []
     for row in rows:
-        points_proposes = row["apointm"] if row["apointm"] is not None else row["point"]
-        if points_proposes is None:
-            continue
         players.append({
             "licence": row["licence"],
             "nom": row["nom"],
             "prenom": row["prenom"],
-            "points_classement": row["point"],
-            "points_proposes": points_proposes,
+            "points_classement": row["initm"],
+            "points_proposes": row["pointm"],
         })
 
     meta = {
         "mode": MODE_POINT,
-        "formula": "apointm - point (xml_licence_b)",
+        "formula": "pointm - initm (xml_licence_b)",
         "truncated": False,
         "resolved_club": resolved_club,
     }
@@ -380,9 +377,7 @@ def search_club_by_name(club_name):
 
 
 def get_results(club_num=None, mode=MODE_POINT):
-    selected_mode = normalize_mode(mode)
-    if selected_mode == MODE_VALINIT:
-        return build_results_valinit(club_num)
+    # Mode production simplifie: uniquement xml_licence_b avec pointm-initm.
     return build_results_point(club_num)
 
 
@@ -422,10 +417,9 @@ def api_search_club():
 def api_results():
     from flask import request
     club_num = request.args.get('club', '').strip() or None
-    mode = normalize_mode(request.args.get('mode', MODE_POINT))
 
     try:
-        results, meta = get_results(club_num=club_num, mode=mode)
+        results, meta = get_results(club_num=club_num, mode=MODE_POINT)
         return jsonify({
             "success": True,
             "data": results,
@@ -469,10 +463,9 @@ def api_test_joueur():
 def download_results():
     from flask import request
     club_num = request.args.get('club', '').strip() or None
-    mode = normalize_mode(request.args.get('mode', MODE_POINT))
 
     try:
-        results, meta = get_results(club_num=club_num, mode=mode)
+        results, meta = get_results(club_num=club_num, mode=MODE_POINT)
         if not results:
             return jsonify({"success": False, "error": "Aucun résultat à télécharger"}), 404
         
