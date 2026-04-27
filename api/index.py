@@ -31,6 +31,7 @@ ID_APP = os.getenv("FFTT_ID_APP")
 SERIE = os.getenv("FFTT_SERIE")
 CLUB_NUM = os.getenv("FFTT_CLUB_NUM")
 BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
+JOUEUR_BASE_URL = "https://www.fftt.com/mobile/pxml/"
 PLAYER_REQUEST_DELAY_SECONDS = 0.5
 CLPRO_TIME_BUDGET_SECONDS = 18
 
@@ -106,7 +107,14 @@ def generate_auth_params():
     return {'serie': SERIE, 'tm': timestamp, 'tmc': tmc, 'id': ID_APP}
 
 
-def make_request(endpoint, additional_params=None, timeout=30, use_new_session=False, close_connection=False):
+def make_request(
+    endpoint,
+    additional_params=None,
+    timeout=30,
+    use_new_session=False,
+    close_connection=False,
+    base_url=BASE_URL,
+):
     if not HAS_FFTT_AUTH:
         raise FFTTApiError(
             "Configuration FFTT manquante. Definis FFTT_PASSWORD, FFTT_ID_APP et FFTT_SERIE dans les variables d'environnement."
@@ -114,7 +122,7 @@ def make_request(endpoint, additional_params=None, timeout=30, use_new_session=F
     params = generate_auth_params()
     if additional_params:
         params.update(additional_params)
-    url = f"{BASE_URL}{endpoint}"
+    url = f"{base_url}{endpoint}"
     try:
         headers = {"Connection": "close"} if close_connection else None
         if use_new_session:
@@ -153,6 +161,7 @@ def get_player_clpro(licence, retries=1):
                 timeout=20,
                 use_new_session=True,
                 close_connection=True,
+                base_url=JOUEUR_BASE_URL,
             )
             root = ET.fromstring(content)
             api_error = extract_api_error(root)
@@ -173,6 +182,46 @@ def get_player_clpro(licence, retries=1):
                 time.sleep(PLAYER_REQUEST_DELAY_SECONDS)
 
     raise FFTTApiError(str(last_error) if last_error else f"Impossible de recuperer clpro pour {licence}")
+
+
+def get_player_details_xml_joueur(licence):
+    content = make_request(
+        "xml_joueur.php",
+        {"licence": licence, "auto": "1"},
+        timeout=20,
+        use_new_session=True,
+        close_connection=True,
+        base_url=JOUEUR_BASE_URL,
+    )
+    try:
+        root = ET.fromstring(content)
+        api_error = extract_api_error(root)
+        if api_error:
+            raise FFTTApiError(f"Erreur FFTT pour la licence {licence}: {api_error}")
+
+        joueur = root.find(".//joueur")
+        if joueur is None:
+            raise FFTTApiError(f"Aucune fiche joueur trouvee pour la licence {licence}")
+
+        clpro = parse_points(joueur.findtext("clpro"))
+        valinit = parse_points(joueur.findtext("valinit"))
+        if clpro is None:
+            raise FFTTApiError(f"clpro manquant pour la licence {licence}")
+        if valinit is None:
+            raise FFTTApiError(f"valinit manquant pour la licence {licence}")
+
+        return {
+            "licence": (joueur.findtext("licence") or licence).strip(),
+            "nom": (joueur.findtext("nom") or "").strip(),
+            "prenom": (joueur.findtext("prenom") or "").strip(),
+            "club": (joueur.findtext("club") or "").strip(),
+            "nclub": (joueur.findtext("nclub") or "").strip(),
+            "clpro": clpro,
+            "valinit": valinit,
+            "progression": clpro - valinit,
+        }
+    except ET.ParseError as exc:
+        raise FFTTApiError(f"Reponse XML invalide pour la licence {licence}: {exc}") from exc
 
 
 def get_club_licence_details(club_num=None):
@@ -347,6 +396,25 @@ def api_results():
         return jsonify({"success": False, "error": str(e)}), 502
     except Exception as e:
         logging.error(f"Erreur lors de la récupération des résultats: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/test-joueur')
+def api_test_joueur():
+    from flask import request
+
+    licence = request.args.get('licence', '').strip()
+    if not licence:
+        return jsonify({"success": False, "error": "Paramètre licence obligatoire"}), 400
+
+    try:
+        joueur = get_player_details_xml_joueur(licence)
+        return jsonify({"success": True, "data": joueur})
+    except FFTTApiError as e:
+        logging.error(f"Erreur FFTT lors du test joueur: {e}")
+        return jsonify({"success": False, "error": str(e)}), 502
+    except Exception as e:
+        logging.error(f"Erreur lors du test joueur: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
