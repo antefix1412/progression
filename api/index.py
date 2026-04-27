@@ -16,6 +16,7 @@ import hmac
 from datetime import datetime
 import logging
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ========== CONFIG ==========
 # Charger les variables d'environnement
@@ -51,6 +52,10 @@ CORS(app)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 
+class FFTTApiError(Exception):
+    pass
+
+
 def generate_auth_params():
     now = datetime.now()
     timestamp = now.strftime("%Y%m%d%H%M%S") + f"{now.microsecond // 1000:03d}"
@@ -70,8 +75,9 @@ def make_request(endpoint, additional_params=None, timeout=30):
         resp.encoding = "latin-1"
         return resp.text
     except requests.RequestException as e:
-        logging.error(f"Erreur API : {e}")
-        return None
+        message = f"Impossible de joindre l'API FFTT pour {endpoint}: {e}"
+        logging.error(message)
+        raise FFTTApiError(message) from e
 
 
 def parse_points(value) -> Optional[int]:
@@ -88,16 +94,15 @@ def parse_points(value) -> Optional[int]:
 
 def get_player_ranking_details(licence):
     content = make_request("xml_joueur.php", {"licence": licence})
-    if not content:
-        return {}
     try:
         root = ET.fromstring(content)
-        if root.findtext("error"):
-            return {}
+        api_error = root.findtext("error")
+        if api_error:
+            raise FFTTApiError(f"Erreur FFTT pour la licence {licence}: {api_error}")
 
         joueur = root.find(".//joueur")
         if joueur is None:
-            return {}
+            raise FFTTApiError(f"Aucune fiche joueur trouvee pour la licence {licence}")
 
         clpro = parse_points(joueur.findtext("clpro"))
         valcla = parse_points(joueur.findtext("valcla"))
@@ -108,21 +113,21 @@ def get_player_ranking_details(licence):
             "point": point,
         }
     except ET.ParseError as e:
-        logging.error(f"Erreur parsing XML joueur : {e}\n{content}")
-        return {}
+        message = f"Reponse XML invalide pour la licence {licence}: {e}"
+        logging.error(f"{message}\n{content}")
+        raise FFTTApiError(message) from e
 
 
 def get_club_licence_details(club_num=None):
     target_club = club_num if club_num else CLUB_NUM
     content = make_request("xml_licence_b.php", {"club": target_club})
-    if not content:
-        return []
     try:
         root = ET.fromstring(content)
-        if root.findtext("error"):
-            return []
+        api_error = root.findtext("error")
+        if api_error:
+            raise FFTTApiError(f"Erreur FFTT pour le club {target_club}: {api_error}")
 
-        players = []
+        licence_nodes = []
         for node in root.findall(".//licence"):
             licence_number = node.findtext("licence")
             nom = node.findtext("nom")
@@ -132,28 +137,70 @@ def get_club_licence_details(club_num=None):
             if not licence_number or not nom or not prenom or point is None:
                 continue
 
-            ranking_details = get_player_ranking_details(licence_number.strip())
-            clpro = ranking_details.get("clpro")
-            points_reference = ranking_details.get("valcla")
-            if clpro is None:
-                continue
-            if points_reference is None:
-                points_reference = point
-
-            players.append({
+            licence_nodes.append({
                 "licence": licence_number.strip(),
                 "nom": nom.strip(),
                 "prenom": prenom.strip(),
-                "points_classement": points_reference,
-                "points_proposes": clpro,
-                "progression": clpro - points_reference,
+                "point": point,
             })
+
+        if not licence_nodes:
+            logging.info(f"Aucun joueur renvoye pour le club {target_club}")
+            return []
+
+        players = []
+        ranking_errors = []
+        max_workers = min(8, len(licence_nodes))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(get_player_ranking_details, item["licence"]): item
+                for item in licence_nodes
+            }
+
+            for future in as_completed(future_map):
+                player = future_map[future]
+                try:
+                    ranking_details = future.result()
+                except FFTTApiError as exc:
+                    ranking_errors.append(f"{player['licence']}: {exc}")
+                    continue
+
+                clpro = ranking_details.get("clpro")
+                points_reference = ranking_details.get("valcla")
+                if clpro is None:
+                    ranking_errors.append(f"{player['licence']}: clpro manquant")
+                    continue
+                if points_reference is None:
+                    points_reference = player["point"]
+
+                players.append({
+                    "licence": player["licence"],
+                    "nom": player["nom"],
+                    "prenom": player["prenom"],
+                    "points_classement": points_reference,
+                    "points_proposes": clpro,
+                    "progression": clpro - points_reference,
+                })
+
+        if ranking_errors:
+            logging.warning(
+                "%s detail(s) joueur FFTT indisponible(s) pour le club %s",
+                len(ranking_errors),
+                target_club,
+            )
+
+        if not players:
+            raise FFTTApiError(
+                f"Les details de classement n'ont pas pu etre recuperes pour les {len(licence_nodes)} joueur(s) du club {target_club}."
+            )
 
         logging.info(f"{len(players)} joueurs récupérés pour le club {target_club}")
         return players
     except ET.ParseError as e:
-        logging.error(f"Erreur parsing XML licence_b : {e}\n{content}")
-        return []
+        message = f"Reponse XML invalide pour le club {target_club}: {e}"
+        logging.error(f"{message}\n{content}")
+        raise FFTTApiError(message) from e
 
 
 def search_club_by_name(club_name):
@@ -214,6 +261,9 @@ def api_search_club():
             c['nom'].lower()
         ))
         return jsonify({"success": True, "data": filtered_clubs, "count": len(filtered_clubs)})
+    except FFTTApiError as e:
+        logging.error(f"Erreur FFTT lors de la recherche de club: {e}")
+        return jsonify({"success": False, "error": str(e)}), 502
     except Exception as e:
         logging.error(f"Erreur lors de la recherche de club: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -232,6 +282,9 @@ def api_results():
     try:
         results = get_results(club_num=club_num, min_progression=min_progression)
         return jsonify({"success": True, "data": results, "count": len(results)})
+    except FFTTApiError as e:
+        logging.error(f"Erreur FFTT lors de la récupération des résultats: {e}")
+        return jsonify({"success": False, "error": str(e)}), 502
     except Exception as e:
         logging.error(f"Erreur lors de la récupération des résultats: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -270,6 +323,9 @@ def download_results():
         
         logging.info(f"Téléchargement du fichier {filename} avec {len(results)} résultats")
         return response
+    except FFTTApiError as e:
+        logging.error(f"Erreur FFTT lors du téléchargement: {e}")
+        return jsonify({"success": False, "error": str(e)}), 502
     except Exception as e:
         logging.error(f"Erreur lors du téléchargement: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
