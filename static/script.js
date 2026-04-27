@@ -10,6 +10,7 @@ const infoText = document.getElementById('infoText');
 const loadingSpinner = document.getElementById('loadingSpinner');
 const statusDiv = document.getElementById('status');
 const ecartMinInput = document.getElementById('ecartMin');
+const modeCalculSelect = document.getElementById('modeCalcul');
 
 // Event Listeners
 loadBtn.addEventListener('click', loadResults);
@@ -24,7 +25,8 @@ async function loadResults() {
     updateInfoPanel('Chargement en cours...', 'info');
     
     try {
-        const response = await fetch('/api/results');
+        const selectedMode = modeCalculSelect ? modeCalculSelect.value : 'point';
+        const response = await fetch(`/api/results?mode=${encodeURIComponent(selectedMode)}`);
         const contentType = response.headers.get('content-type') || '';
         if (!response.ok) {
             const errorText = await response.text();
@@ -49,10 +51,13 @@ async function loadResults() {
             displayResults(preparedResults);
             
             if (preparedResults.length === 0) {
-                updateInfoPanel(`Aucun joueur affiche. API: ${data.count} joueur(s) charge(s) pour le club ${data.club || 'inconnu'}.`, 'warning');
+                const formula = data.formula ? ` Formule: ${data.formula}.` : '';
+                updateInfoPanel(`Aucun joueur affiche. API: ${data.count} joueur(s) charge(s) pour le club ${data.resolved_club || data.club || 'inconnu'}.${formula}`, 'warning');
                 updateStatus('Aucun résultat trouvé');
             } else {
-                updateInfoPanel(`${preparedResults.length} joueur(s) affiché(s) sur ${data.count} chargé(s)`, 'success');
+                const formula = data.formula ? ` | ${data.formula}` : '';
+                const truncation = data.truncated ? ` | partiel: ${data.processed || data.count}/${data.available || data.count}` : '';
+                updateInfoPanel(`${preparedResults.length} joueur(s) affiché(s) sur ${data.count} chargé(s)${formula}${truncation}`, 'success');
                 updateStatus(`${preparedResults.length} joueur(s) affiché(s)`);
             }
             

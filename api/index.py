@@ -34,6 +34,8 @@ BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
 JOUEUR_BASE_URL = "https://www.fftt.com/mobile/pxml/"
 PLAYER_REQUEST_DELAY_SECONDS = 0.5
 CLPRO_TIME_BUDGET_SECONDS = 18
+MODE_POINT = "point"
+MODE_VALINIT = "valinit"
 
 def get_env(*names):
     for name in names:
@@ -74,6 +76,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 class FFTTApiError(Exception):
     pass
+
+
+def normalize_mode(mode_value):
+    mode = (mode_value or "").strip().lower()
+    if mode == MODE_VALINIT:
+        return MODE_VALINIT
+    return MODE_POINT
 
 
 def resolve_club_num(club_num):
@@ -224,7 +233,7 @@ def get_player_details_xml_joueur(licence):
         raise FFTTApiError(f"Reponse XML invalide pour la licence {licence}: {exc}") from exc
 
 
-def get_club_licence_details(club_num=None):
+def get_club_licence_rows(club_num=None):
     target_club = resolve_club_num(club_num)
     content = make_request("xml_licence_b.php", {"club": target_club})
     try:
@@ -257,68 +266,91 @@ def get_club_licence_details(club_num=None):
 
         if not licence_rows:
             logging.info(f"Aucun joueur renvoye pour le club {target_club}")
-            return []
+            return [], target_club
 
-        players = []
-        ranking_errors = []
-        last_call_at = None
-        started_at = time.monotonic()
-
-        clpro_endpoint_available = True
-        probe_licence = licence_rows[0]["licence"]
-        try:
-            get_player_clpro(probe_licence, retries=1)
-        except FFTTApiError as exc:
-            clpro_endpoint_available = False
-            logging.warning("xml_joueur indisponible, bascule sur apointm-point: %s", exc)
-
-        for row in licence_rows:
-            clpro = None
-
-            if clpro_endpoint_available and (time.monotonic() - started_at) < CLPRO_TIME_BUDGET_SECONDS:
-                now = time.monotonic()
-                if last_call_at is not None:
-                    remaining = PLAYER_REQUEST_DELAY_SECONDS - (now - last_call_at)
-                    if remaining > 0:
-                        time.sleep(remaining)
-
-                try:
-                    clpro = get_player_clpro(row["licence"], retries=1)
-                except FFTTApiError as exc:
-                    ranking_errors.append(f"{row['licence']}: {exc}")
-                last_call_at = time.monotonic()
-
-            if clpro is None:
-                clpro = row["apointm"] if row["apointm"] is not None else row["point"]
-
-            if clpro is None:
-                continue
-
-            players.append({
-                "licence": row["licence"],
-                "nom": row["nom"],
-                "prenom": row["prenom"],
-                "points_classement": row["point"],
-                "points_proposes": clpro,
-            })
-
-        if ranking_errors:
-            logging.warning(
-                "%s detail(s) xml_joueur indisponible(s) pour le club %s",
-                len(ranking_errors),
-                target_club,
-            )
-
-        if not players:
-            logging.info(f"Aucun joueur exploitable pour le club {target_club}")
-            return []
-
-        logging.info(f"{len(players)} joueurs récupérés pour le club {target_club}")
-        return players
+        return licence_rows, target_club
     except ET.ParseError as e:
         message = f"Reponse XML invalide pour le club {target_club}: {e}"
         logging.error(f"{message}\n{content}")
         raise FFTTApiError(message) from e
+
+
+def build_results_point(club_num=None):
+    rows, resolved_club = get_club_licence_rows(club_num)
+    players = []
+    for row in rows:
+        points_proposes = row["apointm"] if row["apointm"] is not None else row["point"]
+        if points_proposes is None:
+            continue
+        players.append({
+            "licence": row["licence"],
+            "nom": row["nom"],
+            "prenom": row["prenom"],
+            "points_classement": row["point"],
+            "points_proposes": points_proposes,
+        })
+
+    meta = {
+        "mode": MODE_POINT,
+        "formula": "apointm - point (xml_licence_b)",
+        "truncated": False,
+        "resolved_club": resolved_club,
+    }
+    return players, meta
+
+
+def build_results_valinit(club_num=None):
+    rows, resolved_club = get_club_licence_rows(club_num)
+    if not rows:
+        return [], {
+            "mode": MODE_VALINIT,
+            "formula": "clpro - valinit (xml_joueur)",
+            "truncated": False,
+            "resolved_club": resolved_club,
+        }
+
+    players = []
+    errors = []
+    last_call_at = None
+    started_at = time.monotonic()
+
+    for row in rows:
+        if (time.monotonic() - started_at) >= CLPRO_TIME_BUDGET_SECONDS:
+            break
+
+        now = time.monotonic()
+        if last_call_at is not None:
+            remaining = PLAYER_REQUEST_DELAY_SECONDS - (now - last_call_at)
+            if remaining > 0:
+                time.sleep(remaining)
+
+        try:
+            joueur = get_player_details_xml_joueur(row["licence"])
+            players.append({
+                "licence": row["licence"],
+                "nom": row["nom"],
+                "prenom": row["prenom"],
+                "points_classement": joueur["valinit"],
+                "points_proposes": joueur["clpro"],
+            })
+        except FFTTApiError as exc:
+            errors.append(f"{row['licence']}: {exc}")
+        finally:
+            last_call_at = time.monotonic()
+
+    truncated = len(players) < len(rows)
+    if errors:
+        logging.warning("%s erreur(s) xml_joueur pour le club %s", len(errors), resolved_club)
+
+    meta = {
+        "mode": MODE_VALINIT,
+        "formula": "clpro - valinit (xml_joueur)",
+        "truncated": truncated,
+        "resolved_club": resolved_club,
+        "processed": len(players),
+        "available": len(rows),
+    }
+    return players, meta
 
 
 def search_club_by_name(club_name):
@@ -347,8 +379,11 @@ def search_club_by_name(club_name):
     return clubs
 
 
-def get_results(club_num=None):
-    return get_club_licence_details(club_num)
+def get_results(club_num=None, mode=MODE_POINT):
+    selected_mode = normalize_mode(mode)
+    if selected_mode == MODE_VALINIT:
+        return build_results_valinit(club_num)
+    return build_results_point(club_num)
 
 
 @app.route('/')
@@ -387,10 +422,22 @@ def api_search_club():
 def api_results():
     from flask import request
     club_num = request.args.get('club', '').strip() or None
+    mode = normalize_mode(request.args.get('mode', MODE_POINT))
 
     try:
-        results = get_results(club_num=club_num)
-        return jsonify({"success": True, "data": results, "count": len(results), "club": club_num})
+        results, meta = get_results(club_num=club_num, mode=mode)
+        return jsonify({
+            "success": True,
+            "data": results,
+            "count": len(results),
+            "club": club_num,
+            "resolved_club": meta.get("resolved_club"),
+            "mode": meta.get("mode"),
+            "formula": meta.get("formula"),
+            "truncated": meta.get("truncated", False),
+            "processed": meta.get("processed"),
+            "available": meta.get("available"),
+        })
     except FFTTApiError as e:
         logging.error(f"Erreur FFTT lors de la récupération des résultats: {e}")
         return jsonify({"success": False, "error": str(e)}), 502
@@ -422,9 +469,10 @@ def api_test_joueur():
 def download_results():
     from flask import request
     club_num = request.args.get('club', '').strip() or None
+    mode = normalize_mode(request.args.get('mode', MODE_POINT))
 
     try:
-        results = get_results(club_num=club_num)
+        results, meta = get_results(club_num=club_num, mode=mode)
         if not results:
             return jsonify({"success": False, "error": "Aucun résultat à télécharger"}), 404
         
@@ -436,6 +484,8 @@ def download_results():
                 f"| proposes: {r['points_proposes']} | progression: {progression:+d}"
             )
             lines.append(line)
+
+        lines.insert(0, f"Mode: {meta.get('mode')} | Formule: {meta.get('formula')}")
         
         content = "\n".join(lines)
         today = datetime.now().strftime("%Y-%m-%d")
