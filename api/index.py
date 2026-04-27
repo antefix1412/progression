@@ -107,7 +107,7 @@ def parse_points(value) -> Optional[int]:
 
 
 def get_player_ranking_details(licence):
-    content = make_request("xml_joueur.php", {"licence": licence})
+    content = make_request("xml_joueur.php", {"licence": licence, "auto": "1"})
     try:
         root = ET.fromstring(content)
         api_error = extract_api_error(root)
