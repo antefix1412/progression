@@ -61,10 +61,7 @@ def make_request(endpoint, additional_params=None, timeout=30):
         resp = requests.get(url, params=params, timeout=timeout)
         resp.raise_for_status()
         resp.encoding = "latin-1"
-        try:
-            return resp.text.encode('latin-1').decode('utf-8', errors='ignore')
-        except Exception:
-            return resp.text
+        return resp.text
     except requests.RequestException as e:
         logging.error(f"Erreur API : {e}")
         return None
