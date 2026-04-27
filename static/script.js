@@ -18,33 +18,30 @@ copyBtn.addEventListener('click', copyAllResults);
 // Fonction pour charger les résultats
 async function loadResults() {
     if (loadBtn.disabled) return;
-    
-    // Récupérer le seuil de progression
-    const gain = ecartMinInput.value.trim();
-    
+
     // Désactiver le bouton et afficher le chargement
     setLoading(true);
     updateInfoPanel('Chargement en cours...', 'info');
     
     try {
-        const query = gain ? `?gain=${encodeURIComponent(gain)}` : '';
-        const response = await fetch(`/api/results${query}`);
+        const response = await fetch('/api/results');
         const data = await response.json();
         
         if (data.success) {
-            currentResults = data.data;
-            displayResults(data.data);
+            const preparedResults = prepareResults(data.data);
+            currentResults = preparedResults;
+            displayResults(preparedResults);
             
-            if (data.count === 0) {
+            if (preparedResults.length === 0) {
                 updateInfoPanel('Aucun joueur ne correspond au filtre en cours.', 'warning');
                 updateStatus('Aucun résultat trouvé');
             } else {
-                updateInfoPanel(`${data.count} joueur(s) chargé(s) avec leur progression proposée`, 'success');
-                updateStatus(`${data.count} joueur(s) chargé(s)`);
+                updateInfoPanel(`${preparedResults.length} joueur(s) affiché(s) sur ${data.count} chargé(s)`, 'success');
+                updateStatus(`${preparedResults.length} joueur(s) affiché(s)`);
             }
             
             // Activer le bouton copier
-            copyBtn.disabled = data.count === 0;
+            copyBtn.disabled = preparedResults.length === 0;
         } else {
             updateInfoPanel(`Erreur: ${data.error}`, 'error');
             updateStatus('Erreur lors du chargement');
@@ -149,6 +146,29 @@ function setLoading(loading) {
     }
 }
 
+function prepareResults(results) {
+    const gain = parseMinProgression(ecartMinInput.value);
+
+    return results
+        .map(result => {
+            const pointsClassement = toNumber(result.points_classement);
+            const pointsProposes = toNumber(result.points_proposes);
+            const progression = pointsClassement === null || pointsProposes === null
+                ? null
+                : pointsProposes - pointsClassement;
+
+            return {
+                ...result,
+                points_classement: pointsClassement,
+                points_proposes: pointsProposes,
+                progression
+            };
+        })
+        .filter(result => result.progression !== null)
+        .filter(result => gain === null || result.progression >= gain)
+        .sort((a, b) => b.progression - a.progression);
+}
+
 function updateInfoPanel(message, type = 'info') {
     infoText.textContent = message;
     infoPanel.className = 'info-panel';
@@ -175,6 +195,25 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function parseMinProgression(value) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return null;
+    }
+
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toNumber(value) {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
 }
 
 function formatProgression(value) {

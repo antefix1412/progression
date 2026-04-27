@@ -194,7 +194,6 @@ def get_club_licence_details(club_num=None):
                     "prenom": player["prenom"],
                     "points_classement": points_reference,
                     "points_proposes": clpro,
-                    "progression": clpro - points_reference,
                 })
 
         if ranking_errors:
@@ -243,15 +242,8 @@ def search_club_by_name(club_name):
     return clubs
 
 
-def get_results(club_num=None, min_progression=None):
-    results = []
-    players = get_club_licence_details(club_num)
-    for player in players:
-        if min_progression is not None and player["progression"] < min_progression:
-            continue
-        results.append(player)
-    results.sort(key=lambda x: x["progression"], reverse=True)
-    return results
+def get_results(club_num=None):
+    return get_club_licence_details(club_num)
 
 
 @app.route('/')
@@ -290,14 +282,9 @@ def api_search_club():
 def api_results():
     from flask import request
     club_num = request.args.get('club', CLUB_NUM)
-    raw_gain = request.args.get('gain', request.args.get('ecart', '')).strip()
+
     try:
-        min_progression = int(raw_gain) if raw_gain else None
-    except ValueError:
-        min_progression = None
-    
-    try:
-        results = get_results(club_num=club_num, min_progression=min_progression)
+        results = get_results(club_num=club_num)
         return jsonify({"success": True, "data": results, "count": len(results)})
     except FFTTApiError as e:
         logging.error(f"Erreur FFTT lors de la récupération des résultats: {e}")
@@ -311,22 +298,18 @@ def api_results():
 def download_results():
     from flask import request
     club_num = request.args.get('club', CLUB_NUM)
-    raw_gain = request.args.get('gain', request.args.get('ecart', '')).strip()
+
     try:
-        min_progression = int(raw_gain) if raw_gain else None
-    except ValueError:
-        min_progression = None
-    
-    try:
-        results = get_results(club_num=club_num, min_progression=min_progression)
+        results = get_results(club_num=club_num)
         if not results:
             return jsonify({"success": False, "error": "Aucun résultat à télécharger"}), 404
         
         lines = []
         for r in results:
+            progression = r["points_proposes"] - r["points_classement"]
             line = (
                 f"{r['prenom']} {r['nom']} | classement: {r['points_classement']} "
-                f"| proposes: {r['points_proposes']} | progression: {r['progression']:+d}"
+                f"| proposes: {r['points_proposes']} | progression: {progression:+d}"
             )
             lines.append(line)
         

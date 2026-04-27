@@ -153,7 +153,6 @@ def get_club_licence_details(club_num=None):
                 "prenom": prenom.strip(),
                 "points_classement": points_reference,
                 "points_proposes": clpro,
-                "progression": clpro - points_reference,
             })
 
         logging.info(f"{len(players)} joueurs récupérés pour le club {target_club}")
@@ -189,21 +188,9 @@ def search_club_by_name(club_name):
     return clubs
 
 
-def get_results(club_num=None, min_progression=None):
-    """Récupère la progression des joueurs via clpro - valcla
-    
-    Args:
-        club_num: Numéro du club (utilise CLUB_NUM par défaut)
-        min_progression: Gain minimal mensuel (par défaut aucun filtre)
-    """
-    results = []
-    players = get_club_licence_details(club_num)
-    for player in players:
-        if min_progression is not None and player["progression"] < min_progression:
-            continue
-        results.append(player)
-    results.sort(key=lambda x: x["progression"], reverse=True)
-    return results
+def get_results(club_num=None):
+    """Récupère tous les joueurs et les informations utiles au calcul."""
+    return get_club_licence_details(club_num)
 
 
 @app.route('/')
@@ -251,14 +238,9 @@ def api_results():
             "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM dans les variables d'environnement."
         }), 500
     club_num = request.args.get('club', CLUB_NUM)
-    raw_gain = request.args.get('gain', request.args.get('ecart', '')).strip()
+
     try:
-        min_progression = int(raw_gain) if raw_gain else None
-    except ValueError:
-        min_progression = None
-    
-    try:
-        results = get_results(club_num=club_num, min_progression=min_progression)
+        results = get_results(club_num=club_num)
         return jsonify({"success": True, "data": results, "count": len(results)})
     except Exception as e:
         logging.error(f"Erreur lors de la récupération des résultats: {e}")
@@ -275,22 +257,18 @@ def download_results():
             "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM dans les variables d'environnement."
         }), 500
     club_num = request.args.get('club', CLUB_NUM)
-    raw_gain = request.args.get('gain', request.args.get('ecart', '')).strip()
+
     try:
-        min_progression = int(raw_gain) if raw_gain else None
-    except ValueError:
-        min_progression = None
-    
-    try:
-        results = get_results(club_num=club_num, min_progression=min_progression)
+        results = get_results(club_num=club_num)
         if not results:
             return jsonify({"success": False, "error": "Aucun résultat à télécharger"}), 404
         
         lines = []
         for r in results:
+            progression = r["points_proposes"] - r["points_classement"]
             line = (
                 f"{r['prenom']} {r['nom']} | classement: {r['points_classement']} "
-                f"| proposes: {r['points_proposes']} | progression: {r['progression']:+d}"
+                f"| proposes: {r['points_proposes']} | progression: {progression:+d}"
             )
             lines.append(line)
         
