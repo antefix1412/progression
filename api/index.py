@@ -32,6 +32,7 @@ SERIE = os.getenv("FFTT_SERIE")
 CLUB_NUM = os.getenv("FFTT_CLUB_NUM")
 BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
 PLAYER_REQUEST_DELAY_SECONDS = 0.5
+CLPRO_TIME_BUDGET_SECONDS = 18
 
 def get_env(*names):
     for name in names:
@@ -142,9 +143,9 @@ def parse_points(value) -> Optional[int]:
         return None
 
 
-def get_player_clpro(licence):
+def get_player_clpro(licence, retries=1):
     last_error = None
-    for _ in range(2):
+    for attempt in range(retries):
         try:
             content = make_request(
                 "xml_joueur.php",
@@ -168,7 +169,8 @@ def get_player_clpro(licence):
             return clpro
         except (ET.ParseError, FFTTApiError) as exc:
             last_error = exc
-        time.sleep(PLAYER_REQUEST_DELAY_SECONDS)
+            if attempt < retries - 1:
+                time.sleep(PLAYER_REQUEST_DELAY_SECONDS)
 
     raise FFTTApiError(str(last_error) if last_error else f"Impossible de recuperer clpro pour {licence}")
 
@@ -182,14 +184,13 @@ def get_club_licence_details(club_num=None):
         if api_error:
             raise FFTTApiError(f"Erreur FFTT pour le club {target_club}: {api_error}")
 
-        players = []
-        ranking_errors = []
-        last_call_at = None
+        licence_rows = []
         for node in root.findall(".//licence"):
             licence_number = node.findtext("licence")
             nom = node.findtext("nom")
             prenom = node.findtext("prenom")
             point = parse_points(node.findtext("point"))
+            apointm = parse_points(node.findtext("apointm"))
 
             if not licence_number or not nom or not prenom:
                 continue
@@ -197,26 +198,58 @@ def get_club_licence_details(club_num=None):
             if point is None:
                 continue
 
-            now = time.monotonic()
-            if last_call_at is not None:
-                remaining = PLAYER_REQUEST_DELAY_SECONDS - (now - last_call_at)
-                if remaining > 0:
-                    time.sleep(remaining)
-
-            try:
-                clpro = get_player_clpro(licence_number.strip())
-            except FFTTApiError as exc:
-                ranking_errors.append(f"{licence_number.strip()}: {exc}")
-                last_call_at = time.monotonic()
-                continue
-
-            last_call_at = time.monotonic()
-
-            players.append({
+            licence_rows.append({
                 "licence": licence_number.strip(),
                 "nom": nom.strip(),
                 "prenom": prenom.strip(),
-                "points_classement": point,
+                "point": point,
+                "apointm": apointm,
+            })
+
+        if not licence_rows:
+            logging.info(f"Aucun joueur renvoye pour le club {target_club}")
+            return []
+
+        players = []
+        ranking_errors = []
+        last_call_at = None
+        started_at = time.monotonic()
+
+        clpro_endpoint_available = True
+        probe_licence = licence_rows[0]["licence"]
+        try:
+            get_player_clpro(probe_licence, retries=1)
+        except FFTTApiError as exc:
+            clpro_endpoint_available = False
+            logging.warning("xml_joueur indisponible, bascule sur apointm-point: %s", exc)
+
+        for row in licence_rows:
+            clpro = None
+
+            if clpro_endpoint_available and (time.monotonic() - started_at) < CLPRO_TIME_BUDGET_SECONDS:
+                now = time.monotonic()
+                if last_call_at is not None:
+                    remaining = PLAYER_REQUEST_DELAY_SECONDS - (now - last_call_at)
+                    if remaining > 0:
+                        time.sleep(remaining)
+
+                try:
+                    clpro = get_player_clpro(row["licence"], retries=1)
+                except FFTTApiError as exc:
+                    ranking_errors.append(f"{row['licence']}: {exc}")
+                last_call_at = time.monotonic()
+
+            if clpro is None:
+                clpro = row["apointm"] if row["apointm"] is not None else row["point"]
+
+            if clpro is None:
+                continue
+
+            players.append({
+                "licence": row["licence"],
+                "nom": row["nom"],
+                "prenom": row["prenom"],
+                "points_classement": row["point"],
                 "points_proposes": clpro,
             })
 
@@ -228,9 +261,8 @@ def get_club_licence_details(club_num=None):
             )
 
         if not players:
-            raise FFTTApiError(
-                f"Aucun joueur exploitable: xml_joueur est indisponible pour toutes les licences du club {target_club}."
-            )
+            logging.info(f"Aucun joueur exploitable pour le club {target_club}")
+            return []
 
         logging.info(f"{len(players)} joueurs récupérés pour le club {target_club}")
         return players

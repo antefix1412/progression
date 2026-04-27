@@ -25,7 +25,23 @@ async function loadResults() {
     
     try {
         const response = await fetch('/api/results');
-        const data = await response.json();
+        const contentType = response.headers.get('content-type') || '';
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText.slice(0, 160)}`);
+        }
+
+        let data;
+        if (contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const rawText = await response.text();
+            try {
+                data = JSON.parse(rawText);
+            } catch (parseError) {
+                throw new Error(`Réponse non JSON du serveur (début: ${rawText.slice(0, 80)})`);
+            }
+        }
         
         if (data.success) {
             const preparedResults = prepareResults(data.data);
