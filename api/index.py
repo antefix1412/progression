@@ -13,7 +13,7 @@ import requests
 import xml.etree.ElementTree as ET
 import hashlib
 import hmac
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 
 # ========== CONFIG ==========
@@ -76,83 +76,52 @@ def make_request(endpoint, additional_params=None, timeout=30):
         return None
 
 
-def get_club_players(club_num=None):
+def parse_points(value) -> int | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip().replace(",", ".")
+    if not cleaned:
+        return None
+    try:
+        return int(float(cleaned))
+    except (TypeError, ValueError):
+        return None
+
+
+def get_club_licence_details(club_num=None):
     target_club = club_num if club_num else CLUB_NUM
-    content = make_request('xml_liste_joueur_o.php', {'club': target_club, 'valid': '1'})
-    players = []
-    if not content:
-        return players
-    try:
-        root = ET.fromstring(content)
-        for joueur in root.findall('joueur'):
-            licence = joueur.findtext('licence')
-            nom = joueur.findtext('nom')
-            prenom = joueur.findtext('prenom')
-            if licence and nom and prenom:
-                players.append({'licence': licence.strip(), 'nom': nom.strip(), 'prenom': prenom.strip()})
-        logging.info(f"{len(players)} joueurs récupérés pour le club {target_club}")
-    except ET.ParseError as e:
-        logging.error(f"Erreur parsing XML joueurs : {e}\n{content}")
-    return players
-
-
-def get_player_points(licence):
-    content = make_request("xml_licence_b.php", {"licence": licence})
-    if not content:
-        return None
-    try:
-        root = ET.fromstring(content)
-        if root.findtext("error"):
-            return None
-        pointm = root.findtext("licence/pointm")
-        point = root.findtext("licence/point")
-        if pointm and pointm.strip():
-            try:
-                return int(float(pointm.strip()))
-            except (ValueError, TypeError):
-                pass
-        if point and point.strip():
-            try:
-                return int(float(point.strip()))
-            except (ValueError, TypeError):
-                pass
-        return None
-    except ET.ParseError:
-        return None
-
-
-def parse_classement(value: str) -> int:
-    if not value:
-        return 0
-    try:
-        if "-" in value:
-            value = value.split("-")[-1].strip()
-        return int(float(value))
-    except Exception:
-        return 0
-
-
-def get_matches_for_player(licence):
-    content = make_request('xml_partie.php', {'numlic': licence})
+    content = make_request("xml_licence_b.php", {"club": target_club})
     if not content:
         return []
     try:
         root = ET.fromstring(content)
-        matches = []
-        for partie in root.findall('.//resultat'):
-            date = partie.findtext('date', default='N/A')
-            adversaire = partie.findtext('nom', default='N/A')
-            victoire = partie.findtext('victoire', default='N/A')
-            classement_adv = parse_classement(partie.findtext('classement', default='0'))
-            matches.append({'date': date, 'adversaire': adversaire, 'victoire': victoire, 'classement_adv': classement_adv})
-        for partie in root.findall('.//partie'):
-            date = partie.findtext('date', default='N/A')
-            adversaire = partie.findtext('nom', default='N/A')
-            victoire = partie.findtext('victoire', default='N/A')
-            classement_adv = parse_classement(partie.findtext('classement', default='0'))
-            matches.append({'date': date, 'adversaire': adversaire, 'victoire': victoire, 'classement_adv': classement_adv})
-        return matches
-    except ET.ParseError:
+        if root.findtext("error"):
+            return []
+
+        players = []
+        for node in root.findall(".//licence"):
+            licence_number = node.findtext("licence")
+            nom = node.findtext("nom")
+            prenom = node.findtext("prenom")
+            point = parse_points(node.findtext("point"))
+            pointm = parse_points(node.findtext("pointm"))
+
+            if not licence_number or not nom or not prenom or point is None or pointm is None:
+                continue
+
+            players.append({
+                "licence": licence_number.strip(),
+                "nom": nom.strip(),
+                "prenom": prenom.strip(),
+                "points_classement": point,
+                "points_mensuels": pointm,
+                "progression": pointm - point,
+            })
+
+        logging.info(f"{len(players)} licences récupérées via xml_licence_b pour le club {target_club}")
+        return players
+    except ET.ParseError as e:
+        logging.error(f"Erreur parsing XML licence_b : {e}\n{content}")
         return []
 
 
@@ -179,39 +148,14 @@ def search_club_by_name(club_name):
     return clubs
 
 
-def get_results(club_num=None, min_ecart=75):
-    target_club = club_num if club_num else CLUB_NUM
-    players = get_club_players(target_club)
-    if not players:
-        return []
+def get_results(club_num=None, min_progression=0):
     results = []
-    cutoff_date = datetime.now() - timedelta(days=6)
+    players = get_club_licence_details(club_num)
     for player in players:
-        licence = player['licence']
-        joueur_points = get_player_points(licence)
-        if joueur_points is None:
+        if player["progression"] < min_progression:
             continue
-        matches = get_matches_for_player(licence)
-        if not matches:
-            continue
-        for m in matches:
-            try:
-                match_date = datetime.strptime(m['date'], "%d/%m/%Y")
-            except Exception:
-                continue
-            if match_date < cutoff_date:
-                continue
-            if m['victoire'] == 'V' and m['classement_adv'] >= joueur_points + min_ecart:
-                ecart = m['classement_adv'] - joueur_points
-                results.append({
-                    "prenom": player['prenom'],
-                    "nom": player['nom'],
-                    "points_joueur": joueur_points,
-                    "points_adv": m['classement_adv'],
-                    "ecart": ecart,
-                    "date": m['date']
-                })
-    results.sort(key=lambda x: x['ecart'], reverse=True)
+        results.append(player)
+    results.sort(key=lambda x: x["progression"], reverse=True)
     return results
 
 
@@ -249,12 +193,12 @@ def api_results():
     from flask import request
     club_num = request.args.get('club', CLUB_NUM)
     try:
-        min_ecart = int(request.args.get('ecart', 75))
+        min_progression = int(request.args.get('gain', request.args.get('ecart', 0)))
     except ValueError:
-        min_ecart = 75
+        min_progression = 0
     
     try:
-        results = get_results(club_num=club_num, min_ecart=min_ecart)
+        results = get_results(club_num=club_num, min_progression=min_progression)
         return jsonify({"success": True, "data": results, "count": len(results)})
     except Exception as e:
         logging.error(f"Erreur lors de la récupération des résultats: {e}")
@@ -266,23 +210,26 @@ def download_results():
     from flask import request
     club_num = request.args.get('club', CLUB_NUM)
     try:
-        min_ecart = int(request.args.get('ecart', 75))
+        min_progression = int(request.args.get('gain', request.args.get('ecart', 0)))
     except ValueError:
-        min_ecart = 75
+        min_progression = 0
     
     try:
-        results = get_results(club_num=club_num, min_ecart=min_ecart)
+        results = get_results(club_num=club_num, min_progression=min_progression)
         if not results:
             return jsonify({"success": False, "error": "Aucun résultat à télécharger"}), 404
         
         lines = []
         for r in results:
-            line = f"{r['prenom']} {r['nom']} ({r['points_joueur']}) --> {r['points_adv']} +{r['ecart']}"
+            line = (
+                f"{r['prenom']} {r['nom']} | classement: {r['points_classement']} "
+                f"| mensuels: {r['points_mensuels']} | progression: {r['progression']:+d}"
+            )
             lines.append(line)
         
         content = "\n".join(lines)
         today = datetime.now().strftime("%Y-%m-%d")
-        filename = f"{today}_perf_tableau.txt"
+        filename = f"{today}_progression_mensuelle.txt"
         
         response = make_response(content)
         response.headers['Content-Type'] = 'text/plain; charset=utf-8'

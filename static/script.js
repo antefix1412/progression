@@ -19,15 +19,15 @@ copyBtn.addEventListener('click', copyAllResults);
 async function loadResults() {
     if (loadBtn.disabled) return;
     
-    // Récupérer l'écart
-    const ecart = ecartMinInput.value.trim() || '75';
+    // Récupérer le seuil de progression
+    const gain = ecartMinInput.value.trim() || '0';
     
     // Désactiver le bouton et afficher le chargement
     setLoading(true);
     updateInfoPanel('Chargement en cours...', 'info');
     
     try {
-        const response = await fetch(`/api/results?ecart=${encodeURIComponent(ecart)}`);
+        const response = await fetch(`/api/results?gain=${encodeURIComponent(gain)}`);
         const data = await response.json();
         
         if (data.success) {
@@ -35,11 +35,11 @@ async function loadResults() {
             displayResults(data.data);
             
             if (data.count === 0) {
-                updateInfoPanel('Aucune performance exceptionnelle trouvée.', 'warning');
+                updateInfoPanel('Aucun joueur ne correspond au filtre en cours.', 'warning');
                 updateStatus('Aucun résultat trouvé');
             } else {
-                updateInfoPanel(`${data.count} performance(s) exceptionnelle(s) trouvée(s)`, 'success');
-                updateStatus(`${data.count} performance(s) chargée(s)`);
+                updateInfoPanel(`${data.count} joueur(s) chargé(s) avec leur progression mensuelle`, 'success');
+                updateStatus(`${data.count} joueur(s) chargé(s)`);
             }
             
             // Activer le bouton copier
@@ -73,12 +73,12 @@ function displayResults(results) {
         // Affichage tableau desktop
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td>${escapeHtml(result.date)}</td>
+            <td>${escapeHtml(result.licence)}</td>
             <td>${escapeHtml(result.prenom)}</td>
             <td>${escapeHtml(result.nom)}</td>
-            <td>${result.points_joueur}</td>
-            <td>${result.points_adv}</td>
-            <td><span class="ecart-badge">+${result.ecart}</span></td>
+            <td>${result.points_classement}</td>
+            <td>${result.points_mensuels}</td>
+            <td><span class="ecart-badge">${formatProgression(result.progression)}</span></td>
         `;
         resultsBody.appendChild(row);
         
@@ -87,24 +87,24 @@ function displayResults(results) {
         card.className = 'result-card';
         card.innerHTML = `
             <div class="card-row">
-                <span class="card-label">Date:</span>
-                <span class="card-value">${escapeHtml(result.date)}</span>
+                <span class="card-label">Licence:</span>
+                <span class="card-value">${escapeHtml(result.licence)}</span>
             </div>
             <div class="card-row">
                 <span class="card-label">Joueur:</span>
                 <span class="card-value">${escapeHtml(result.prenom)} ${escapeHtml(result.nom)}</span>
             </div>
             <div class="card-row">
-                <span class="card-label">Points Joueur:</span>
-                <span class="card-value">${result.points_joueur}</span>
+                <span class="card-label">Points classement:</span>
+                <span class="card-value">${result.points_classement}</span>
             </div>
             <div class="card-row">
-                <span class="card-label">Points Adversaire:</span>
-                <span class="card-value">${result.points_adv}</span>
+                <span class="card-label">Points mensuels:</span>
+                <span class="card-value">${result.points_mensuels}</span>
             </div>
             <div class="card-row">
-                <span class="card-label">Écart:</span>
-                <span class="card-value"><span class="ecart-badge">+${result.ecart}</span></span>
+                <span class="card-label">Progression:</span>
+                <span class="card-value"><span class="ecart-badge">${formatProgression(result.progression)}</span></span>
             </div>
         `;
         mobileResults.appendChild(card);
@@ -115,12 +115,12 @@ function displayResults(results) {
 function copyAllResults() {
     if (currentResults.length === 0) return;
     
-    const header = "Date\t\tPrénom\t\tNom\t\tPoints J.\tPoints Adv.\tÉcart";
+    const header = "Licence\tPrénom\tNom\tPoints classement\tPoints mensuels\tProgression";
     const separator = "-".repeat(80);
     const lines = [header, separator];
     
     currentResults.forEach(r => {
-        const line = `${r.date}\t\t${r.prenom}\t\t${r.nom}\t\t${r.points_joueur}\t\t${r.points_adv}\t\t+${r.ecart}`;
+        const line = `${r.licence}\t${r.prenom}\t${r.nom}\t${r.points_classement}\t${r.points_mensuels}\t${formatProgression(r.progression)}`;
         lines.push(line);
     });
     
@@ -143,7 +143,7 @@ function setLoading(loading) {
         loadingSpinner.style.display = 'block';
     } else {
         loadBtn.disabled = false;
-        loadBtn.innerHTML = '<span class="btn-icon">🔄</span> Charger les Résultats';
+        loadBtn.innerHTML = '<span class="btn-icon">🔄</span> Charger les Joueurs';
         loadingSpinner.style.display = 'none';
     }
 }
@@ -174,6 +174,10 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function formatProgression(value) {
+    return value >= 0 ? `+${value}` : `${value}`;
 }
 
 // Charger automatiquement au démarrage (optionnel)
