@@ -32,13 +32,30 @@ SERIE = os.getenv("FFTT_SERIE")
 CLUB_NUM = os.getenv("FFTT_CLUB_NUM")
 BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
 
-# Vérifier que toutes les variables sont définies
-if not all([MOTDEPASSE, ID_APP, SERIE, CLUB_NUM]):
-    logging.warning("Variables d'environnement manquantes - utilisation des valeurs par défaut")
-    MOTDEPASSE = "g2XCYk1eK3"
-    ID_APP = "SW436"
-    SERIE = "RSJKKEQZCLBACUX"
-    CLUB_NUM = "03350022"
+def get_env(*names):
+    for name in names:
+        value = os.getenv(name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
+MOTDEPASSE = get_env("FFTT_PASSWORD", "MOTDEPASSE")
+ID_APP = get_env("FFTT_ID_APP", "ID_APP")
+SERIE = get_env("FFTT_SERIE", "SERIE")
+CLUB_NUM = get_env("FFTT_CLUB_NUM", "CLUB_NUM", "NUM_CLUB")
+
+HAS_FFTT_AUTH = all([MOTDEPASSE, ID_APP, SERIE])
+
+if not HAS_FFTT_AUTH:
+    logging.warning(
+        "Variables FFTT manquantes. Definis FFTT_PASSWORD, FFTT_ID_APP et FFTT_SERIE (ou alias MOTDEPASSE, ID_APP, SERIE)."
+    )
+
+if not CLUB_NUM:
+    logging.warning(
+        "Numero de club absent. Definis FFTT_CLUB_NUM (ou alias CLUB_NUM/NUM_CLUB), ou passe ?club=... a l'API."
+    )
 # ============================
 
 # Calculer les chemins absolus pour templates et static
@@ -54,6 +71,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 class FFTTApiError(Exception):
     pass
+
+
+def resolve_club_num(club_num):
+    target = (club_num or CLUB_NUM or "").strip()
+    if not target:
+        raise FFTTApiError(
+            "Numero de club manquant. Definis FFTT_CLUB_NUM (ou CLUB_NUM/NUM_CLUB) dans les variables d'environnement Vercel."
+        )
+    return target
 
 
 def extract_api_error(root):
@@ -79,6 +105,10 @@ def generate_auth_params():
 
 
 def make_request(endpoint, additional_params=None, timeout=30):
+    if not HAS_FFTT_AUTH:
+        raise FFTTApiError(
+            "Configuration FFTT manquante. Definis FFTT_PASSWORD, FFTT_ID_APP et FFTT_SERIE dans les variables d'environnement."
+        )
     params = generate_auth_params()
     if additional_params:
         params.update(additional_params)
@@ -133,7 +163,7 @@ def get_player_ranking_details(licence):
 
 
 def get_club_licence_details(club_num=None):
-    target_club = club_num if club_num else CLUB_NUM
+    target_club = resolve_club_num(club_num)
     content = make_request("xml_licence_b.php", {"club": target_club})
     try:
         root = ET.fromstring(content)
@@ -283,7 +313,7 @@ def api_search_club():
 @app.route('/api/results')
 def api_results():
     from flask import request
-    club_num = request.args.get('club', CLUB_NUM)
+    club_num = request.args.get('club', '').strip() or None
 
     try:
         results = get_results(club_num=club_num)
@@ -299,7 +329,7 @@ def api_results():
 @app.route('/api/download')
 def download_results():
     from flask import request
-    club_num = request.args.get('club', CLUB_NUM)
+    club_num = request.args.get('club', '').strip() or None
 
     try:
         results = get_results(club_num=club_num)

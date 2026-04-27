@@ -21,13 +21,21 @@ except ImportError:
     # python-dotenv n'est pas installé (mode production sur Vercel)
     pass
 
-MOTDEPASSE = os.getenv("FFTT_PASSWORD")
-ID_APP = os.getenv("FFTT_ID_APP")
-SERIE = os.getenv("FFTT_SERIE")
-CLUB_NUM = os.getenv("FFTT_CLUB_NUM")
+def get_env(*names):
+    for name in names:
+        value = os.getenv(name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
+MOTDEPASSE = get_env("FFTT_PASSWORD", "MOTDEPASSE")
+ID_APP = get_env("FFTT_ID_APP", "ID_APP")
+SERIE = get_env("FFTT_SERIE", "SERIE")
+CLUB_NUM = get_env("FFTT_CLUB_NUM", "CLUB_NUM", "NUM_CLUB")
 BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
 
-HAS_FFTT_CONFIG = all([MOTDEPASSE, ID_APP, SERIE, CLUB_NUM])
+HAS_FFTT_AUTH = all([MOTDEPASSE, ID_APP, SERIE])
 # ============================
 
 app = Flask(__name__)
@@ -35,10 +43,24 @@ CORS(app)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-if not HAS_FFTT_CONFIG:
+if not HAS_FFTT_AUTH:
     logging.warning(
-        "Variables FFTT manquantes. L'application peut s'afficher, mais les appels API FFTT seront indisponibles tant que FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM ne sont pas définies."
+        "Variables FFTT manquantes. L'application peut s'afficher, mais les appels API FFTT seront indisponibles tant que FFTT_PASSWORD, FFTT_ID_APP et FFTT_SERIE ne sont pas definies."
     )
+
+if not CLUB_NUM:
+    logging.warning(
+        "Numero de club absent. Definis FFTT_CLUB_NUM (ou CLUB_NUM/NUM_CLUB), ou passe ?club=... a l'API."
+    )
+
+
+def resolve_club_num(club_num):
+    target = (club_num or CLUB_NUM or "").strip()
+    if not target:
+        raise ValueError(
+            "Numero de club manquant. Definis FFTT_CLUB_NUM (ou CLUB_NUM/NUM_CLUB) dans les variables d'environnement."
+        )
+    return target
 
 
 def extract_api_error(root):
@@ -64,7 +86,7 @@ def generate_auth_params():
 
 
 def make_request(endpoint, additional_params=None, timeout=30):
-    if not HAS_FFTT_CONFIG:
+    if not HAS_FFTT_AUTH:
         logging.error("Configuration FFTT manquante: impossible d'appeler %s", endpoint)
         return None
     params = generate_auth_params()
@@ -120,7 +142,7 @@ def get_player_ranking_details(licence):
 
 
 def get_club_licence_details(club_num=None):
-    target_club = club_num if club_num else CLUB_NUM
+    target_club = resolve_club_num(club_num)
     content = make_request("xml_licence_b.php", {"club": target_club})
     if not content:
         return []
@@ -234,12 +256,12 @@ def api_search_club():
 def api_results():
     """Récupère la progression des joueurs via clpro - valcla"""
     from flask import request
-    if not HAS_FFTT_CONFIG:
+    if not HAS_FFTT_AUTH:
         return jsonify({
             "success": False,
-            "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM dans les variables d'environnement."
+            "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP et FFTT_SERIE dans les variables d'environnement."
         }), 500
-    club_num = request.args.get('club', CLUB_NUM)
+    club_num = request.args.get('club', '').strip() or None
 
     try:
         results = get_results(club_num=club_num)
@@ -253,12 +275,12 @@ def api_results():
 def download_results():
     """Télécharge les résultats"""
     from flask import request, make_response
-    if not HAS_FFTT_CONFIG:
+    if not HAS_FFTT_AUTH:
         return jsonify({
             "success": False,
-            "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP, FFTT_SERIE et FFTT_CLUB_NUM dans les variables d'environnement."
+            "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP et FFTT_SERIE dans les variables d'environnement."
         }), 500
-    club_num = request.args.get('club', CLUB_NUM)
+    club_num = request.args.get('club', '').strip() or None
 
     try:
         results = get_results(club_num=club_num)

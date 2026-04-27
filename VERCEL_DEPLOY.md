@@ -18,6 +18,18 @@ FFTT_SERIE=RSJKKEQZCLBACUX
 FFTT_CLUB_NUM=03350022
 ```
 
+Important : le fichier `.env` local n'est pas charge automatiquement en production Vercel.
+Les valeurs doivent etre configurees dans **Settings > Environment Variables**.
+
+Alias acceptes par le code (si vous les utilisez deja) :
+
+```
+MOTDEPASSE (alias de FFTT_PASSWORD)
+ID_APP (alias de FFTT_ID_APP)
+SERIE (alias de FFTT_SERIE)
+CLUB_NUM ou NUM_CLUB (alias de FFTT_CLUB_NUM)
+```
+
 ## Déploiement
 
 ```bash
