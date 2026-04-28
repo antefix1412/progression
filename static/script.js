@@ -104,10 +104,6 @@ function displayResults(results) {
         card.className = 'result-card';
         card.innerHTML = `
             <div class="card-row">
-                <span class="card-label">Licence:</span>
-                <span class="card-value">${escapeHtml(result.licence)}</span>
-            </div>
-            <div class="card-row">
                 <span class="card-label">Joueur:</span>
                 <span class="card-value">${escapeHtml(result.prenom)} ${escapeHtml(result.nom)}</span>
             </div>
@@ -116,11 +112,7 @@ function displayResults(results) {
                 <span class="card-value">${result.points_officiels}</span>
             </div>
             <div class="card-row">
-                <span class="card-label">Points mensuels:</span>
-                <span class="card-value">${result.points_classement}</span>
-            </div>
-            <div class="card-row">
-                <span class="card-label">Points calculés FFTT:</span>
+                <span class="card-label">Points virtuels:</span>
                 <span class="card-value">${result.points_proposes}</span>
             </div>
             <div class="card-row">
