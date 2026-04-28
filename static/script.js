@@ -80,7 +80,7 @@ function displayResults(results) {
     mobileResults.innerHTML = '';
     
     if (results.length === 0) {
-        resultsBody.innerHTML = '<tr><td colspan="6" class="empty-state">Aucune donnée à afficher</td></tr>';
+        resultsBody.innerHTML = '<tr><td colspan="7" class="empty-state">Aucune donnée à afficher</td></tr>';
         mobileResults.innerHTML = '<p style="text-align: center; color: #6c757d; font-style: italic; padding: 20px;">Aucune donnée à afficher</p>';
         return;
     }
@@ -92,6 +92,7 @@ function displayResults(results) {
             <td>${escapeHtml(result.licence)}</td>
             <td>${escapeHtml(result.prenom)}</td>
             <td>${escapeHtml(result.nom)}</td>
+            <td>${result.points_officiels}</td>
             <td>${result.points_classement}</td>
             <td>${result.points_proposes}</td>
             <td><span class="ecart-badge">${formatProgression(result.progression)}</span></td>
@@ -111,7 +112,11 @@ function displayResults(results) {
                 <span class="card-value">${escapeHtml(result.prenom)} ${escapeHtml(result.nom)}</span>
             </div>
             <div class="card-row">
-                <span class="card-label">Points classement:</span>
+                <span class="card-label">Points officiels:</span>
+                <span class="card-value">${result.points_officiels}</span>
+            </div>
+            <div class="card-row">
+                <span class="card-label">Points mensuels:</span>
                 <span class="card-value">${result.points_classement}</span>
             </div>
             <div class="card-row">
@@ -131,12 +136,12 @@ function displayResults(results) {
 function copyAllResults() {
     if (currentResults.length === 0) return;
     
-    const header = "Licence\tPrénom\tNom\tPoints classement\tPoints calculés FFTT\tProgression";
-    const separator = "-".repeat(80);
+    const header = "Licence\tPrénom\tNom\tPoints officiels\tPoints mensuels\tPoints calculés FFTT\tProgression";
+    const separator = "-".repeat(100);
     const lines = [header, separator];
     
     currentResults.forEach(r => {
-        const line = `${r.licence}\t${r.prenom}\t${r.nom}\t${r.points_classement}\t${r.points_proposes}\t${formatProgression(r.progression)}`;
+        const line = `${r.licence}\t${r.prenom}\t${r.nom}\t${r.points_officiels}\t${r.points_classement}\t${r.points_proposes}\t${formatProgression(r.progression)}`;
         lines.push(line);
     });
     
@@ -169,6 +174,7 @@ function prepareResults(results) {
 
     return results
         .map(result => {
+            const pointsOfficiels = toNumber(result.points_officiels);
             const pointsClassement = toNumber(result.points_classement);
             const pointsProposes = toNumber(result.points_proposes);
             const progression = pointsClassement === null || pointsProposes === null
@@ -177,6 +183,7 @@ function prepareResults(results) {
 
             return {
                 ...result,
+                points_officiels: pointsOfficiels,
                 points_classement: pointsClassement,
                 points_proposes: pointsProposes,
                 progression

@@ -834,7 +834,7 @@ def build_results_calculated_club(club_num=None):
     if not rows:
         return [], {
             "mode": MODE_POINT,
-            "formula": "pointm + somme(points recalcules FFTT)",
+            "formula": "points officiels -> points mensuels + somme(points recalcules FFTT) (fallback pointm si timeout/erreur)",
             "truncated": False,
             "resolved_club": resolved_club,
             "period_start": None,
@@ -906,7 +906,8 @@ def build_results_calculated_club(club_num=None):
             "licence": licence,
             "nom": row["nom"],
             "prenom": row["prenom"],
-            "points_classement": joueur_points,
+            "points_officiels": row["initm"],
+            "points_classement": row["initm"],
             "points_proposes": round(joueur_points + total_points, 2),
         })
 
@@ -915,7 +916,7 @@ def build_results_calculated_club(club_num=None):
 
     meta = {
         "mode": MODE_POINT,
-        "formula": "pointm + somme(points recalcules FFTT) (fallback pointm si timeout/erreur)",
+        "formula": "points officiels -> points mensuels + somme(points recalcules FFTT) (fallback pointm si timeout/erreur)",
         "truncated": processed < len(rows),
         "resolved_club": resolved_club,
         "period_start": start_date.strftime("%Y-%m-%d"),

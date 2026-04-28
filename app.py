@@ -445,6 +445,7 @@ def calculate_player_period_total(
         "licence": licence,
         "joueur_points": joueur_points,
         "count": len(matches) if include_matches else None,
+        "points_mensuels": joueur_points,
         "points_proposes": round(joueur_points + total_points, 2),
         "total_points_calculated": round(total_points, 2),
     }
@@ -458,7 +459,7 @@ def build_results_calculated_club(club_num=None):
     if not rows:
         return [], {
             "mode": MODE_POINT,
-            "formula": "pointm + somme(points recalcules FFTT)",
+            "formula": "points officiels -> points mensuels + somme(points recalcules FFTT)",
             "truncated": False,
             "resolved_club": resolve_club_num(club_num),
             "period_start": None,
@@ -491,13 +492,14 @@ def build_results_calculated_club(club_num=None):
             "licence": licence,
             "nom": row["nom"],
             "prenom": row["prenom"],
-            "points_classement": joueur_points,
+            "points_officiels": row["points_classement"],
+            "points_classement": row["points_classement"],
             "points_proposes": round(joueur_points + calc["total_points_calculated"], 2),
         })
 
     meta = {
         "mode": MODE_POINT,
-        "formula": "pointm + somme(points recalcules FFTT)",
+        "formula": "points officiels -> points mensuels + somme(points recalcules FFTT)",
         "truncated": False,
         "resolved_club": target_club,
         "period_start": start_date.strftime("%Y-%m-%d"),
