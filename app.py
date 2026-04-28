@@ -40,6 +40,19 @@ DEFAULT_PLAYER_LICENSE = get_env("FFTT_TEST_PLAYER_LICENSE") or "3533138"
 BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
 JOUEUR_BASE_URL = "https://www.fftt.com/mobile/pxml/"
 PLAYER_REQUEST_DELAY_SECONDS = 0.5
+MODE_POINT = "point"
+
+
+def get_current_period_bounds(reference=None):
+    reference = reference or datetime.now()
+    if reference.day >= 11:
+        start = datetime(reference.year, reference.month, 1)
+    else:
+        if reference.month == 1:
+            start = datetime(reference.year - 1, 12, 1)
+        else:
+            start = datetime(reference.year, reference.month - 1, 1)
+    return start, reference
 
 HAS_FFTT_AUTH = all([MOTDEPASSE, ID_APP, SERIE])
 
@@ -337,6 +350,163 @@ def get_player_details_xml_joueur(licence):
         raise ValueError(f"Reponse XML invalide pour la licence {licence}: {e}") from e
 
 
+def parse_match_date(value):
+    try:
+        return datetime.strptime((value or "").strip(), "%d/%m/%Y")
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_player_partie_mysql_records(licence):
+    content = make_request(
+        "xml_partie_mysql.php",
+        {"licence": licence},
+        timeout=25,
+        use_new_session=True,
+        close_connection=True,
+        base_url=JOUEUR_BASE_URL,
+    )
+    if not content:
+        return []
+
+    try:
+        root = ET.fromstring(content)
+        if extract_api_error(root):
+            return []
+
+        records = []
+        for item in root:
+            record = {}
+            for child in list(item):
+                record[child.tag] = (child.text or "").strip()
+            if record:
+                records.append(record)
+        return records
+    except ET.ParseError:
+        return []
+
+
+def calculate_player_period_total(
+    licence,
+    joueur_points,
+    start_date,
+    end_date,
+    shared_opponent_cache=None,
+    include_matches=False,
+):
+    partie_mysql_records = fetch_player_partie_mysql_records(licence)
+    opponent_cache = shared_opponent_cache if shared_opponent_cache is not None else {}
+
+    matches = []
+    total_points = 0.0
+
+    for match in partie_mysql_records:
+        match_date = parse_match_date(match.get("date"))
+        if not match_date or match_date < start_date or match_date > end_date:
+            continue
+
+        advlic = (match.get("advlic") or "").strip()
+        resultat = (match.get("vd") or "").strip()
+        coefchamp = match.get("coefchamp", "1")
+        idpartie = match.get("idpartie", "")
+        adversaire = match.get("advnompre", "")
+
+        if not advlic:
+            continue
+
+        if advlic not in opponent_cache:
+            try:
+                adv_joueur = get_player_details_xml_joueur(advlic)
+                opponent_cache[advlic] = adv_joueur.get("point") or adv_joueur.get("valinit")
+            except Exception:
+                opponent_cache[advlic] = None
+
+        adversaire_points = opponent_cache.get(advlic)
+        if not adversaire_points:
+            continue
+
+        points = calculate_match_points(joueur_points, adversaire_points, resultat, coefchamp)
+        total_points += points
+
+        if include_matches:
+            matches.append({
+                "idpartie": idpartie,
+                "date": match.get("date", ""),
+                "adversaire": adversaire,
+                "advlic": advlic,
+                "adversaire_points": adversaire_points,
+                "resultat": resultat,
+                "coefchamp": float(coefchamp) if coefchamp else 1.0,
+                "points_calculated": points,
+            })
+
+    payload = {
+        "success": True,
+        "licence": licence,
+        "joueur_points": joueur_points,
+        "count": len(matches) if include_matches else None,
+        "total_points_calculated": round(total_points, 2),
+    }
+    if include_matches:
+        payload["matches"] = matches
+    return payload
+
+
+def build_results_calculated_club(club_num=None):
+    rows = get_club_licence_details(club_num)
+    if not rows:
+        return [], {
+            "mode": MODE_POINT,
+            "formula": "initm + somme(points recalcules FFTT)",
+            "truncated": False,
+            "resolved_club": resolve_club_num(club_num),
+            "period_start": None,
+            "period_end": None,
+            "processed": 0,
+            "available": 0,
+        }
+
+    target_club = resolve_club_num(club_num)
+    start_date, end_date = get_current_period_bounds()
+    players = []
+    processed = 0
+    opponent_cache = {}
+
+    for row in rows:
+        licence = row["licence"]
+        joueur_points = row["points_classement"]
+
+        calc = calculate_player_period_total(
+            licence=licence,
+            joueur_points=joueur_points,
+            start_date=start_date,
+            end_date=end_date,
+            shared_opponent_cache=opponent_cache,
+            include_matches=False,
+        )
+
+        processed += 1
+        players.append({
+            "licence": licence,
+            "nom": row["nom"],
+            "prenom": row["prenom"],
+            "points_classement": joueur_points,
+            "points_proposes": round(joueur_points + calc["total_points_calculated"], 2),
+        })
+
+    meta = {
+        "mode": MODE_POINT,
+        "formula": "initm + somme(points recalcules FFTT)",
+        "truncated": False,
+        "resolved_club": target_club,
+        "period_start": start_date.strftime("%Y-%m-%d"),
+        "period_end": end_date.strftime("%Y-%m-%d"),
+        "processed": processed,
+        "available": len(rows),
+    }
+    return players, meta
+
+
 def search_club_by_name(club_name):
     """Recherche un club par son nom et retourne les résultats"""
     content = make_request('xml_club_b.php', {'nom': club_name})
@@ -364,8 +534,8 @@ def search_club_by_name(club_name):
 
 
 def get_results(club_num=None):
-    """Récupère tous les joueurs et les informations utiles au calcul."""
-    return get_club_licence_details(club_num)
+    """Récupère les résultats calculés du club."""
+    return build_results_calculated_club(club_num)
 
 
 # ===== TABLEAU FFTT DE POINTS =====
@@ -596,13 +766,26 @@ def api_results():
                     "error": f"Joueur {licence} non trouvé ou données manquantes"
                 }), 404
             
-            joueur_points = parse_points(licence_b_records[0].get('pointm', ''))
+            joueur_points = parse_points(licence_b_records[0].get('initm', ''))
             result = build_results_with_calculated_points(licence, joueur_points)
             return jsonify(result)
         
         # Sinon, retourner les résultats standard
-        results = get_results(club_num=club_num)
-        return jsonify({"success": True, "data": results, "count": len(results)})
+        results, meta = get_results(club_num=club_num)
+        return jsonify({
+            "success": True,
+            "data": results,
+            "count": len(results),
+            "club": club_num,
+            "resolved_club": meta.get("resolved_club"),
+            "mode": meta.get("mode"),
+            "formula": meta.get("formula"),
+            "truncated": meta.get("truncated", False),
+            "processed": meta.get("processed"),
+            "available": meta.get("available"),
+            "period_start": meta.get("period_start"),
+            "period_end": meta.get("period_end"),
+        })
     except Exception as e:
         logging.error(f"Erreur lors de la récupération des résultats: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
