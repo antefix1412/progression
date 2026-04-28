@@ -80,7 +80,7 @@ function displayResults(results) {
     mobileResults.innerHTML = '';
     
     if (results.length === 0) {
-        resultsBody.innerHTML = '<tr><td colspan="7" class="empty-state">Aucune donnée à afficher</td></tr>';
+        resultsBody.innerHTML = '<tr><td colspan="5" class="empty-state">Aucune donnée à afficher</td></tr>';
         mobileResults.innerHTML = '<p style="text-align: center; color: #6c757d; font-style: italic; padding: 20px;">Aucune donnée à afficher</p>';
         return;
     }
@@ -89,11 +89,9 @@ function displayResults(results) {
         // Affichage tableau desktop
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td>${escapeHtml(result.licence)}</td>
             <td>${escapeHtml(result.prenom)}</td>
             <td>${escapeHtml(result.nom)}</td>
             <td>${result.points_officiels}</td>
-            <td>${result.points_classement}</td>
             <td>${result.points_proposes}</td>
             <td><span class="ecart-badge">${formatProgression(result.progression)}</span></td>
         `;
@@ -128,12 +126,12 @@ function displayResults(results) {
 function copyAllResults() {
     if (currentResults.length === 0) return;
     
-    const header = "Licence\tPrénom\tNom\tPoints officiels\tPoints mensuels\tPoints calculés FFTT\tProgression";
-    const separator = "-".repeat(100);
+    const header = "Prénom\tNom\tPoints officiels\tPoints calculés FFTT\tProgression";
+    const separator = "-".repeat(80);
     const lines = [header, separator];
     
     currentResults.forEach(r => {
-        const line = `${r.licence}\t${r.prenom}\t${r.nom}\t${r.points_officiels}\t${r.points_classement}\t${r.points_proposes}\t${formatProgression(r.progression)}`;
+        const line = `${r.prenom}\t${r.nom}\t${r.points_officiels}\t${r.points_proposes}\t${formatProgression(r.progression)}`;
         lines.push(line);
     });
     
