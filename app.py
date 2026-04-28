@@ -445,6 +445,7 @@ def calculate_player_period_total(
         "licence": licence,
         "joueur_points": joueur_points,
         "count": len(matches) if include_matches else None,
+        "points_proposes": round(joueur_points + total_points, 2),
         "total_points_calculated": round(total_points, 2),
     }
     if include_matches:
@@ -457,7 +458,7 @@ def build_results_calculated_club(club_num=None):
     if not rows:
         return [], {
             "mode": MODE_POINT,
-            "formula": "initm + somme(points recalcules FFTT)",
+            "formula": "pointm + somme(points recalcules FFTT)",
             "truncated": False,
             "resolved_club": resolve_club_num(club_num),
             "period_start": None,
@@ -474,7 +475,7 @@ def build_results_calculated_club(club_num=None):
 
     for row in rows:
         licence = row["licence"]
-        joueur_points = row["points_classement"]
+        joueur_points = row["points_proposes"]
 
         calc = calculate_player_period_total(
             licence=licence,
@@ -496,7 +497,7 @@ def build_results_calculated_club(club_num=None):
 
     meta = {
         "mode": MODE_POINT,
-        "formula": "initm + somme(points recalcules FFTT)",
+        "formula": "pointm + somme(points recalcules FFTT)",
         "truncated": False,
         "resolved_club": target_club,
         "period_start": start_date.strftime("%Y-%m-%d"),
@@ -693,6 +694,7 @@ def build_results_with_calculated_points(licence, joueur_points):
             "joueur_points": joueur_points,
             "matches": matches_with_points,
             "count": len(matches_with_points),
+            "points_proposes": round(joueur_points + total_points, 2),
             "total_points_calculated": round(total_points, 2),
         }
     except Exception as e:
@@ -766,7 +768,7 @@ def api_results():
                     "error": f"Joueur {licence} non trouvé ou données manquantes"
                 }), 404
             
-            joueur_points = parse_points(licence_b_records[0].get('initm', ''))
+            joueur_points = parse_points(licence_b_records[0].get('pointm', ''))
             result = build_results_with_calculated_points(licence, joueur_points)
             return jsonify(result)
         

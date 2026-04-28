@@ -834,7 +834,7 @@ def build_results_calculated_club(club_num=None):
     if not rows:
         return [], {
             "mode": MODE_POINT,
-            "formula": "initm + somme(points recalcules FFTT)",
+            "formula": "pointm + somme(points recalcules FFTT)",
             "truncated": False,
             "resolved_club": resolved_club,
             "period_start": None,
@@ -866,7 +866,7 @@ def build_results_calculated_club(club_num=None):
     logging.info(f"[Club {resolved_club}] Calculs en mémoire...")
     for row in rows:
         licence = row["licence"]
-        joueur_points = row["initm"]
+        joueur_points = row["pointm"]
         
         if licence not in matches_by_licence:
             # Pas de matches trouvés pour ce joueur
@@ -915,7 +915,7 @@ def build_results_calculated_club(club_num=None):
 
     meta = {
         "mode": MODE_POINT,
-        "formula": "initm + somme(points recalcules FFTT) (fallback pointm si timeout/erreur)",
+        "formula": "pointm + somme(points recalcules FFTT) (fallback pointm si timeout/erreur)",
         "truncated": processed < len(rows),
         "resolved_club": resolved_club,
         "period_start": start_date.strftime("%Y-%m-%d"),
@@ -983,7 +983,7 @@ def api_results():
                     "error": f"Joueur {licence} non trouvé ou données manquantes"
                 }), 404
             
-            joueur_points = parse_points(licence_b_records[0].get('initm', ''))
+            joueur_points = parse_points(licence_b_records[0].get('pointm', ''))
             start_date, end_date = get_current_period_bounds()
             result = calculate_player_period_total(
                 licence=licence,
@@ -994,6 +994,7 @@ def api_results():
             )
             result["period_start"] = start_date.strftime("%Y-%m-%d")
             result["period_end"] = end_date.strftime("%Y-%m-%d")
+            result["points_proposes"] = round(joueur_points + result.get("total_points_calculated", 0), 2)
             return jsonify(result)
         
         # Sinon, retourner les résultats standard
