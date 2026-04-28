@@ -12,6 +12,7 @@ import logging
 import os
 import time
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ========== CONFIG ==========
 # Charger les variables d'environnement depuis .env (en développement)
@@ -34,11 +35,51 @@ MOTDEPASSE = get_env("FFTT_PASSWORD", "MOTDEPASSE")
 ID_APP = get_env("FFTT_ID_APP", "ID_APP")
 SERIE = get_env("FFTT_SERIE", "SERIE")
 CLUB_NUM = get_env("FFTT_CLUB_NUM", "CLUB_NUM", "NUM_CLUB")
+TEST_API_TOKEN = get_env("FFTT_TEST_API_TOKEN", "TEST_API_TOKEN")
+DEFAULT_PLAYER_LICENSE = get_env("FFTT_TEST_PLAYER_LICENSE") or "3533138"
 BASE_URL = "https://apiv2.fftt.com/mobile/pxml/"
 JOUEUR_BASE_URL = "https://www.fftt.com/mobile/pxml/"
 PLAYER_REQUEST_DELAY_SECONDS = 0.5
 
 HAS_FFTT_AUTH = all([MOTDEPASSE, ID_APP, SERIE])
+
+PLAYER_FULL_ENDPOINTS = {
+    "joueur": {
+        "endpoint": "xml_joueur.php",
+        "base_url": JOUEUR_BASE_URL,
+        "build_params": lambda licence: {"licence": licence, "auto": "1"},
+    },
+    "licence": {
+        "endpoint": "xml_licence.php",
+        "base_url": BASE_URL,
+        "build_params": lambda licence: {"licence": licence},
+    },
+    "licence_b": {
+        "endpoint": "xml_licence_b.php",
+        "base_url": BASE_URL,
+        "build_params": lambda licence: {"licence": licence},
+    },
+    "liste_joueur_o": {
+        "endpoint": "xml_liste_joueur_o.php",
+        "base_url": BASE_URL,
+        "build_params": lambda licence: {"licence": licence, "valid": "0"},
+    },
+    "partie_mysql": {
+        "endpoint": "xml_partie_mysql.php",
+        "base_url": JOUEUR_BASE_URL,
+        "build_params": lambda licence: {"licence": licence},
+    },
+    "partie_spid": {
+        "endpoint": "xml_partie.php",
+        "base_url": BASE_URL,
+        "build_params": lambda licence: {"numlic": licence},
+    },
+    "histo_classement": {
+        "endpoint": "xml_histo_classement.php",
+        "base_url": BASE_URL,
+        "build_params": lambda licence: {"numlic": licence},
+    },
+}
 # ============================
 
 app = Flask(__name__)
@@ -123,6 +164,97 @@ def parse_points(value) -> Optional[int]:
         return None
 
 
+def validate_test_api_token(candidate_token):
+    if not TEST_API_TOKEN:
+        raise ValueError(
+            "Token manquant sur le serveur. Definis FFTT_TEST_API_TOKEN dans les variables d'environnement."
+        )
+    if not candidate_token:
+        raise PermissionError("Parametre token obligatoire")
+    if not hmac.compare_digest(candidate_token, TEST_API_TOKEN):
+        raise PermissionError("Token invalide")
+
+
+def parse_xml_records(content):
+    root = ET.fromstring(content)
+    api_error = extract_api_error(root)
+    if api_error:
+        raise ValueError(api_error)
+
+    records = []
+    children = list(root)
+    if not children:
+        return records, root.tag
+
+    for item in children:
+        record = {}
+        for child in list(item):
+            record[child.tag] = (child.text or "").strip()
+        if record:
+            records.append(record)
+
+    return records, root.tag
+
+
+def fetch_player_full_data(licence):
+    aggregated = {}
+
+    for key, config in PLAYER_FULL_ENDPOINTS.items():
+        endpoint = config["endpoint"]
+        params = config["build_params"](licence)
+        try:
+            content = make_request(
+                endpoint,
+                additional_params=params,
+                timeout=25,
+                base_url=config["base_url"],
+                use_new_session=True,
+                close_connection=True,
+            )
+            if not content:
+                aggregated[key] = {
+                    "endpoint": endpoint,
+                    "params": params,
+                    "error": "Aucune reponse API",
+                }
+                continue
+        except Exception as exc:
+            aggregated[key] = {
+                "endpoint": endpoint,
+                "params": params,
+                "error": str(exc),
+            }
+            continue
+
+        try:
+            records, root_tag = parse_xml_records(content)
+            fields = sorted({field for row in records for field in row.keys()})
+            aggregated[key] = {
+                "endpoint": endpoint,
+                "root": root_tag,
+                "params": params,
+                "count": len(records),
+                "fields": fields,
+                "records": records,
+            }
+        except ET.ParseError as exc:
+            aggregated[key] = {
+                "endpoint": endpoint,
+                "params": params,
+                "error": f"Reponse XML invalide: {exc}",
+                "raw_preview": content[:1000],
+            }
+        except ValueError as exc:
+            aggregated[key] = {
+                "endpoint": endpoint,
+                "params": params,
+                "error": str(exc),
+                "raw_preview": content[:1000],
+            }
+
+    return aggregated
+
+
 def get_club_licence_details(club_num=None):
     target_club = resolve_club_num(club_num)
     content = make_request("xml_licence_b.php", {"club": target_club})
@@ -188,12 +320,15 @@ def get_player_details_xml_joueur(licence):
         if clpro is None or valinit is None:
             raise ValueError(f"clpro ou valinit manquant pour la licence {licence}")
 
+        point = parse_points(joueur.findtext("point"))
+        
         return {
             "licence": (joueur.findtext("licence") or licence).strip(),
             "nom": (joueur.findtext("nom") or "").strip(),
             "prenom": (joueur.findtext("prenom") or "").strip(),
             "club": (joueur.findtext("club") or "").strip(),
             "nclub": (joueur.findtext("nclub") or "").strip(),
+            "point": point,
             "clpro": clpro,
             "valinit": valinit,
             "progression": clpro - valinit,
@@ -231,6 +366,172 @@ def search_club_by_name(club_name):
 def get_results(club_num=None):
     """Récupère tous les joueurs et les informations utiles au calcul."""
     return get_club_licence_details(club_num)
+
+
+# ===== TABLEAU FFTT DE POINTS =====
+# Format: (écart_min, écart_max): (victoire_normale, défaite_normale, victoire_anormale, défaite_anormale)
+FFTT_POINTS_TABLE = [
+    (0, 24, 6, -5, 6, -5),          # écart 0-24
+    (25, 49, 5.5, -4.5, 7, -6),     # écart 25-49
+    (50, 99, 5, -4, 8, -7),         # écart 50-99
+    (100, 149, 4, -3, 10, -8),      # écart 100-149
+    (150, 199, 3, -2, 13, -10),     # écart 150-199
+    (200, 299, 2, -1, 17, -12.5),   # écart 200-299
+    (300, 399, 1, -0.5, 22, -16),   # écart 300-399
+    (400, 499, 0.5, 0, 28, -20),    # écart 400-499
+    (500, 999999, 0, 0, 40, -29),   # écart 500+
+]
+
+
+def get_base_points_from_table(ecart, resultat):
+    """
+    Retourne les points de base selon le tableau FFTT.
+    
+    Args:
+        ecart: différence de classement (points adversaire - points joueur)
+        resultat: 'V' (victoire) ou 'D' (défaite)
+    
+    Returns:
+        float: points de base (peut être négatif pour défaite)
+    """
+    # Déterminer si c'est une victoire/défaite exceptionnelle ou normale
+    is_exceptional = (resultat == 'V' and ecart > 0) or (resultat == 'D' and ecart < 0)
+    
+    # Chercher dans la table
+    abs_ecart = abs(ecart)
+    for ecart_min, ecart_max, vic_norm, def_norm, vic_anom, def_anom in FFTT_POINTS_TABLE:
+        if ecart_min <= abs_ecart <= ecart_max:
+            if is_exceptional:
+                # Victoire exceptionnelle ou défaite anormale
+                if resultat == 'V':
+                    return vic_anom
+                else:
+                    return def_anom
+            else:
+                # Victoire normale ou défaite normale
+                if resultat == 'V':
+                    return vic_norm
+                else:
+                    return def_norm
+    
+    # Fallback (ne devrait pas arriver ici)
+    return 0
+
+
+def calculate_match_points(joueur_points, adversaire_points, resultat, coefchamp):
+    """
+    Calcule les points gagnés/perdus pour un match.
+    
+    Args:
+        joueur_points: classement du joueur
+        adversaire_points: classement de l'adversaire
+        resultat: 'V' ou 'D'
+        coefchamp: coefficient du championnat (1, 0.75, 1.5, etc.)
+    
+    Returns:
+        float: points du match (peut être négatif)
+    """
+    if not joueur_points or not adversaire_points:
+        return 0
+    
+    try:
+        j_pts = float(joueur_points)
+        a_pts = float(adversaire_points)
+        coef = float(coefchamp) if coefchamp else 1.0
+    except (ValueError, TypeError):
+        return 0
+    
+    ecart = a_pts - j_pts
+    base_points = get_base_points_from_table(ecart, resultat)
+    final_points = base_points * coef
+    
+    return round(final_points, 2)
+
+
+def build_results_with_calculated_points(licence, joueur_points):
+    """
+    Construit les résultats avec points calculés pour un joueur.
+    
+    Args:
+        licence: numéro de licence du joueur
+        joueur_points: classement du joueur (e.g., pointm de licence_b)
+    
+    Returns:
+        dict: agrégation des matches avec points calculés
+    """
+    try:
+        # Récupérer les données complètes du joueur
+        full_data = fetch_player_full_data(licence)
+        
+        # Extraire les données nécessaires
+        partie_mysql_records = full_data.get('partie_mysql', {}).get('records', [])
+        
+        matches_with_points = []
+        adversaire_cache = {}  # Cache pour éviter les appels redondants
+        
+        for match in partie_mysql_records:
+            try:
+                idpartie = match.get('idpartie', '')
+                date = match.get('date', '')
+                adversaire = match.get('advnompre', '')
+                advlic = match.get('advlic', '')
+                resultat = match.get('vd', '')  # 'V' ou 'D'
+                coefchamp = match.get('coefchamp', '1')
+                
+                # Récupérer les points de l'adversaire via xml_joueur (avec cache)
+                adversaire_points = None
+                if advlic:
+                    if advlic not in adversaire_cache:
+                        try:
+                            adv_joueur = get_player_details_xml_joueur(advlic)
+                            # Utiliser le champ 'point' si disponible, sinon 'valinit' en fallback
+                            adversaire_points = adv_joueur.get('point') or adv_joueur.get('valinit')
+                            adversaire_cache[advlic] = adversaire_points
+                            # Petit délai pour ne pas surcharger l'API
+                            time.sleep(0.1)
+                        except Exception as e:
+                            logging.warning(f"Impossible de récupérer les points pour advlic {advlic}: {e}")
+                            adversaire_cache[advlic] = None
+                    
+                    adversaire_points = adversaire_cache[advlic]
+                
+                if not adversaire_points:
+                    logging.warning(f"Points adversaire manquants pour match {idpartie}")
+                    continue
+                
+                points = calculate_match_points(joueur_points, adversaire_points, resultat, coefchamp)
+                
+                matches_with_points.append({
+                    'idpartie': idpartie,
+                    'date': date,
+                    'adversaire': adversaire,
+                    'advlic': advlic,
+                    'adversaire_points': adversaire_points,
+                    'resultat': resultat,
+                    'coefchamp': float(coefchamp),
+                    'points_calculated': points,
+                })
+            except Exception as e:
+                logging.warning(f"Erreur calcul points pour match {match.get('idpartie', '?')}: {e}")
+                continue
+        
+        total_points = sum(m['points_calculated'] for m in matches_with_points)
+        
+        return {
+            "success": True,
+            "licence": licence,
+            "joueur_points": joueur_points,
+            "matches": matches_with_points,
+            "count": len(matches_with_points),
+            "total_points_calculated": round(total_points, 2),
+        }
+    except Exception as e:
+        logging.error(f"Erreur build_results_with_calculated_points pour licence {licence}: {e}")
+        return {
+            "success": False,
+            "licence": licence,
+            "error": str(e),
+        }
 
 
 @app.route('/')
@@ -277,9 +578,29 @@ def api_results():
             "success": False,
             "error": "Configuration FFTT manquante sur le serveur. Ajoute FFTT_PASSWORD, FFTT_ID_APP et FFTT_SERIE dans les variables d'environnement."
         }), 500
+    
     club_num = request.args.get('club', '').strip() or None
+    licence = request.args.get('licence', '').strip() or None
+    calculated = request.args.get('calculated', '').strip().lower() == '1'
 
     try:
+        # Si demande de points calculés pour un joueur spécifique
+        if calculated and licence:
+            # Récupérer les données du joueur pour obtenir ses points
+            full_data = fetch_player_full_data(licence)
+            licence_b_records = full_data.get('licence_b', {}).get('records', [])
+            
+            if not licence_b_records:
+                return jsonify({
+                    "success": False,
+                    "error": f"Joueur {licence} non trouvé ou données manquantes"
+                }), 404
+            
+            joueur_points = parse_points(licence_b_records[0].get('pointm', ''))
+            result = build_results_with_calculated_points(licence, joueur_points)
+            return jsonify(result)
+        
+        # Sinon, retourner les résultats standard
         results = get_results(club_num=club_num)
         return jsonify({"success": True, "data": results, "count": len(results)})
     except Exception as e:
@@ -300,6 +621,35 @@ def api_test_joueur():
         return jsonify({"success": True, "data": joueur})
     except Exception as e:
         logging.error(f"Erreur test xml_joueur: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/test-player-full')
+def api_test_player_full():
+    from flask import request
+
+    licence = (request.args.get('licence', '') or DEFAULT_PLAYER_LICENSE).strip()
+    token = request.args.get('token', '').strip()
+
+    if not licence:
+        return jsonify({"success": False, "error": "Parametre licence obligatoire"}), 400
+
+    try:
+        validate_test_api_token(token)
+        data = fetch_player_full_data(licence)
+        return jsonify({
+            "success": True,
+            "licence": licence,
+            "sources": list(PLAYER_FULL_ENDPOINTS.keys()),
+            "data": data,
+        })
+    except PermissionError as e:
+        return jsonify({"success": False, "error": str(e)}), 403
+    except ValueError as e:
+        logging.error(f"Erreur test-player-full: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception as e:
+        logging.error(f"Erreur test-player-full: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 

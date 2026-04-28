@@ -16,6 +16,8 @@ FFTT_PASSWORD=g2XCYk1eK3
 FFTT_ID_APP=SW436
 FFTT_SERIE=RSJKKEQZCLBACUX
 FFTT_CLUB_NUM=03350022
+FFTT_TEST_API_TOKEN=choisir-un-token-long-et-prive
+FFTT_TEST_PLAYER_LICENSE=3533138
 ```
 
 Important : le fichier `.env` local n'est pas charge automatiquement en production Vercel.
@@ -28,6 +30,20 @@ MOTDEPASSE (alias de FFTT_PASSWORD)
 ID_APP (alias de FFTT_ID_APP)
 SERIE (alias de FFTT_SERIE)
 CLUB_NUM ou NUM_CLUB (alias de FFTT_CLUB_NUM)
+TEST_API_TOKEN (alias de FFTT_TEST_API_TOKEN)
+
+## Lien prod pour les donnees completes d'un joueur
+
+L'endpoint protege est :
+
+```
+https://<votre-projet>.vercel.app/api/test-player-full?licence=3533138&token=<FFTT_TEST_API_TOKEN>
+```
+
+Remarques :
+
+- Le token est obligatoire et doit correspondre a la variable d'environnement `FFTT_TEST_API_TOKEN`.
+- Si `licence` est omis, la valeur par defaut vient de `FFTT_TEST_PLAYER_LICENSE` (ou `3533138`).
 ```
 
 ## Déploiement

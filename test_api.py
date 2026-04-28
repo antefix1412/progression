@@ -17,6 +17,7 @@ Exemples:
 """
 
 import argparse
+import json
 import os
 import sys
 import xml.etree.ElementTree as ET
@@ -51,6 +52,7 @@ def parse_args():
     parser.add_argument("--out-dir", help="Dossier de sortie pour sauvegarder chaque XML en mode --all-endpoints")
     parser.add_argument("--no-raw", action="store_true", help="N'affiche pas le XML brut")
     parser.add_argument("--limit-records", type=int, default=0, help="Limite le nombre d'enregistrements affichés (0 = tous)")
+    parser.add_argument("--player-full", action="store_true", help="Récupère toutes les données joueur disponibles pour une licence")
     return parser.parse_args()
 
 
@@ -77,6 +79,118 @@ def endpoint_params(endpoint, licence, club, nom):
     if endpoint == "xml_club_b.php":
         return {"nom": nom}
     return {}
+
+
+def parse_xml_records(raw_xml):
+    root = ET.fromstring(raw_xml)
+    records = []
+    for item in list(root):
+        row = {}
+        for child in list(item):
+            row[child.tag] = (child.text or "").strip()
+        if row:
+            records.append(row)
+    return records, root.tag
+
+
+def fetch_player_full(args):
+    licence = args.licence or "3533138"
+    auth_params = generate_auth_params()
+
+    targets = [
+        {
+            "key": "joueur",
+            "base": "www",
+            "endpoint": "xml_joueur.php",
+            "params": {"licence": licence, "auto": "1"},
+        },
+        {
+            "key": "licence",
+            "base": "apiv2",
+            "endpoint": "xml_licence.php",
+            "params": {"licence": licence},
+        },
+        {
+            "key": "licence_b",
+            "base": "apiv2",
+            "endpoint": "xml_licence_b.php",
+            "params": {"licence": licence},
+        },
+        {
+            "key": "liste_joueur_o",
+            "base": "apiv2",
+            "endpoint": "xml_liste_joueur_o.php",
+            "params": {"licence": licence, "valid": "0"},
+        },
+        {
+            "key": "partie_mysql",
+            "base": "www",
+            "endpoint": "xml_partie_mysql.php",
+            "params": {"licence": licence},
+        },
+        {
+            "key": "partie_spid",
+            "base": "apiv2",
+            "endpoint": "xml_partie.php",
+            "params": {"numlic": licence},
+        },
+        {
+            "key": "histo_classement",
+            "base": "apiv2",
+            "endpoint": "xml_histo_classement.php",
+            "params": {"numlic": licence},
+        },
+    ]
+
+    output = {
+        "licence": licence,
+        "sources": [target["key"] for target in targets],
+        "data": {},
+    }
+
+    for target in targets:
+        try:
+            raw_xml = call_endpoint(
+                base=target["base"],
+                endpoint=target["endpoint"],
+                auth_params=auth_params,
+                extra_params=target["params"],
+                timeout=args.timeout,
+            )
+        except requests.RequestException as exc:
+            output["data"][target["key"]] = {
+                "endpoint": target["endpoint"],
+                "params": target["params"],
+                "error": str(exc),
+            }
+            continue
+
+        try:
+            records, root_tag = parse_xml_records(raw_xml)
+            fields = sorted({field for row in records for field in row.keys()})
+            output["data"][target["key"]] = {
+                "endpoint": target["endpoint"],
+                "params": target["params"],
+                "root": root_tag,
+                "count": len(records),
+                "fields": fields,
+                "records": records,
+            }
+        except ET.ParseError as exc:
+            output["data"][target["key"]] = {
+                "endpoint": target["endpoint"],
+                "params": target["params"],
+                "error": f"Reponse XML invalide: {exc}",
+                "raw_preview": raw_xml[:1000],
+            }
+
+    print("\n=== JSON complet joueur ===")
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+
+    if args.save:
+        with open(args.save, "w", encoding="utf-8") as file_handle:
+            json.dump(output, file_handle, ensure_ascii=False, indent=2)
+        print(f"JSON sauvegarde dans: {args.save}")
 
 
 def print_records(root, limit_records=0):
@@ -202,7 +316,9 @@ def run_all_endpoints(args):
 
 def main():
     args = parse_args()
-    if args.all_endpoints:
+    if args.player_full:
+        fetch_player_full(args)
+    elif args.all_endpoints:
         run_all_endpoints(args)
     else:
         run_single_endpoint(args)

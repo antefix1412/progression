@@ -1,0 +1,162 @@
+{
+  "licence": "3533138",
+  "nom": "LEMESLE",
+  "prenom": "Antoine",
+  "club": "U.S. VERN",
+  "period": {
+    "start": "2026-04-01",
+    "end": "2026-04-28",
+    "source": "xml_partie",
+    "rule": "du 1er du mois courant si on est apres le 11, sinon du 1er du mois precedent"
+  },
+  "calculation": {
+    "matches_included": 16,
+    "points_ignored": true
+  },
+  "matches": [
+    {
+      "date": "19/04/2026",
+      "idpartie": "12896107",
+      "epreuve": "FED_TOURNOI_RAQUETTE D'OR ATT 25/26",
+      "adversaire": "CADIC Yvan",
+      "resultat": "D",
+      "forfait": "0",
+      "coefchamp": 0.75
+    },
+    {
+      "date": "19/04/2026",
+      "idpartie": "12896110",
+      "epreuve": "FED_TOURNOI_RAQUETTE D'OR ATT 25/26",
+      "adversaire": "GOURMELON Loan",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 0.75
+    },
+    {
+      "date": "19/04/2026",
+      "idpartie": "12896115",
+      "epreuve": "FED_TOURNOI_RAQUETTE D'OR ATT 25/26",
+      "adversaire": "GIGAN Gauderic",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 0.75
+    },
+    {
+      "date": "19/04/2026",
+      "idpartie": "12896125",
+      "epreuve": "FED_TOURNOI_RAQUETTE D'OR ATT 25/26",
+      "adversaire": "PEGET Kevin",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 0.75
+    },
+    {
+      "date": "19/04/2026",
+      "idpartie": "12896165",
+      "epreuve": "FED_TOURNOI_RAQUETTE D'OR ATT 25/26",
+      "adversaire": "GAUTREAU DUMEZ Candice",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 0.75
+    },
+    {
+      "date": "19/04/2026",
+      "idpartie": "12896166",
+      "epreuve": "FED_TOURNOI_RAQUETTE D'OR ATT 25/26",
+      "adversaire": "BALCOU MULLER Kiara-Luna",
+      "resultat": "D",
+      "forfait": "0",
+      "coefchamp": 0.75
+    },
+    {
+      "date": "19/04/2026",
+      "idpartie": "12896282",
+      "epreuve": "FED_TOURNOI_RAQUETTE D'OR ATT 25/26",
+      "adversaire": "BARRAIS Vincent",
+      "resultat": "D",
+      "forfait": "0",
+      "coefchamp": 0.75
+    },
+    {
+      "date": "19/04/2026",
+      "idpartie": "12896303",
+      "epreuve": "FED_TOURNOI_RAQUETTE D'OR ATT 25/26",
+      "adversaire": "GAONAC'H Yann",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 0.75
+    },
+    {
+      "date": "19/04/2026",
+      "idpartie": "12896304",
+      "epreuve": "FED_TOURNOI_RAQUETTE D'OR ATT 25/26",
+      "adversaire": "CADIC Yvan",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 0.75
+    },
+    {
+      "date": "05/04/2026",
+      "idpartie": "12709968",
+      "epreuve": "FED_Finales Individuelles",
+      "adversaire": "RAKOTOANOSY Fidy",
+      "resultat": "D",
+      "forfait": "0",
+      "coefchamp": 1.5
+    },
+    {
+      "date": "05/04/2026",
+      "idpartie": "12709915",
+      "epreuve": "FED_Finales Individuelles",
+      "adversaire": "GRANDAIS Romain",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 1.5
+    },
+    {
+      "date": "05/04/2026",
+      "idpartie": "12709919",
+      "epreuve": "FED_Finales Individuelles",
+      "adversaire": "PEGET Kevin",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 1.5
+    },
+    {
+      "date": "05/04/2026",
+      "idpartie": "12709923",
+      "epreuve": "FED_Finales Individuelles",
+      "adversaire": "LAGADEC Nicolas",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 1.5
+    },
+    {
+      "date": "05/04/2026",
+      "idpartie": "12709931",
+      "epreuve": "FED_Finales Individuelles",
+      "adversaire": "PACAUD Dorian",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 1.5
+    },
+    {
+      "date": "05/04/2026",
+      "idpartie": "12709943",
+      "epreuve": "FED_Finales Individuelles",
+      "adversaire": "BOURGEON Nolann",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 1.5
+    },
+    {
+      "date": "05/04/2026",
+      "idpartie": "12709967",
+      "epreuve": "FED_Finales Individuelles",
+      "adversaire": "MENGUY Emmanuel",
+      "resultat": "V",
+      "forfait": "0",
+      "coefchamp": 1.5
+    }
+  ]
+}
