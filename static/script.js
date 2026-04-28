@@ -115,7 +115,7 @@ function displayResults(results) {
                 <span class="card-value">${result.points_classement}</span>
             </div>
             <div class="card-row">
-                <span class="card-label">Points proposes:</span>
+                <span class="card-label">Points calculés FFTT:</span>
                 <span class="card-value">${result.points_proposes}</span>
             </div>
             <div class="card-row">
@@ -131,7 +131,7 @@ function displayResults(results) {
 function copyAllResults() {
     if (currentResults.length === 0) return;
     
-    const header = "Licence\tPrénom\tNom\tPoints classement\tPoints proposes\tProgression";
+    const header = "Licence\tPrénom\tNom\tPoints classement\tPoints calculés FFTT\tProgression";
     const separator = "-".repeat(80);
     const lines = [header, separator];
     
