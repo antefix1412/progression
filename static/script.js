@@ -119,17 +119,17 @@ form.addEventListener("submit", async (event) => {
 
   loading = true;
   submit.disabled = true;
-  submit.innerHTML = '<span aria-hidden="true">🔄</span> Rechargement...';
+  submit.innerHTML = '<span aria-hidden="true">🔄</span> Recherche...';
   copyButton.disabled = true;
   copyButton.classList.remove("ready");
   setMessage("");
   setLoader(true);
-  setStatus("Chargement des résultats sauvegardés...");
+  setStatus("Rafraîchissement en cours...");
   allPlayers = [];
   renderPlayers([]);
 
   try {
-    const response = await fetch(`/api/players?${params.toString()}`);
+    const response = await fetch(`/api/refresh?${params.toString()}`);
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
@@ -143,7 +143,7 @@ form.addEventListener("submit", async (event) => {
     loading = false;
     setLoader(false);
     submit.disabled = false;
-    submit.innerHTML = '<span aria-hidden="true">🔄</span> Recharger l\'affichage';
+    submit.innerHTML = '<span aria-hidden="true">🔄</span> Rafraîchir maintenant';
     copyButton.disabled = visiblePlayers.length === 0;
   }
 });

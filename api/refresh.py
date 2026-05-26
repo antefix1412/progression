@@ -2,27 +2,14 @@
 # -*- coding: utf-8 -*-
 
 import json
-import os
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
 from api.index import refresh_payload
 
 
-def is_authorized(headers) -> bool:
-    secret = os.environ.get("CRON_SECRET")
-    if not secret:
-        return True
-    return headers.get("Authorization") == f"Bearer {secret}"
-
-
 class handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
-        if not is_authorized(self.headers):
-            self.send_response(401)
-            self.end_headers()
-            return
-
         payload, status = refresh_payload(urlparse(self.path).query)
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
