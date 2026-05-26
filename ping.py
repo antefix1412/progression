@@ -2,7 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import re
+import os
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from dataclasses import asdict
 from typing import List, Optional
@@ -17,8 +20,18 @@ REQUEST_SLEEP_SECONDS = 0.8
 MAX_RETRIES = 8
 RETRY_BACKOFF_SECONDS = 1.5
 DEBUG_DUMP_HTML = True
+SCRAPE_WORKERS = int(os.environ.get("SCRAPE_WORKERS", "8"))
 
 SESSION = requests.Session()
+THREAD_LOCAL = threading.local()
+
+
+def get_session() -> requests.Session:
+    session = getattr(THREAD_LOCAL, "session", None)
+    if session is None:
+        session = requests.Session()
+        THREAD_LOCAL.session = session
+    return session
 
 
 @dataclass
@@ -45,7 +58,7 @@ def fetch_html(url: str) -> str:
         "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
         "Referer": BASE_URL + "/",
     }
-    response = SESSION.get(url, timeout=REQUEST_TIMEOUT, headers=headers)
+    response = get_session().get(url, timeout=REQUEST_TIMEOUT, headers=headers)
     response.raise_for_status()
     return response.text
 
@@ -60,7 +73,7 @@ def fetch_fragment(url: str) -> str:
     }
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
-        response = SESSION.get(url, timeout=REQUEST_TIMEOUT, headers=headers)
+        response = get_session().get(url, timeout=REQUEST_TIMEOUT, headers=headers)
         if DEBUG_DUMP_HTML:
             print(f"GET {url} -> {response.status_code} {response.url}")
         if response.status_code == 429:
@@ -146,6 +159,18 @@ def parse_player_page(url: str) -> Optional[PlayerPoints]:
     )
 
 
+def parse_player_from_listing_url(url: str) -> Optional[PlayerPoints]:
+    licence_match = re.search(r"/licencies/(\d+)", url)
+    if not licence_match:
+        return None
+
+    licence = licence_match.group(1)
+    classement_url = build_page_url(
+        f"app/fftt/licencies/{licence}/graphiques/journee/classement"
+    )
+    return parse_player_page(classement_url)
+
+
 def format_progression(value: float) -> str:
     return f"+{value:.1f}" if value >= 0 else f"{value:.1f}"
 
@@ -155,7 +180,7 @@ def scrape_club_players(
     sort_param: str = SORT_PARAM,
     limit: Optional[int] = None,
 ) -> List[PlayerPoints]:
-    SESSION.get(BASE_URL, timeout=REQUEST_TIMEOUT)
+    get_session().get(BASE_URL, timeout=REQUEST_TIMEOUT)
     club_url = build_page_url(f"app/fftt/clubs/{club_id}/licencies?SORT={sort_param}")
     listing_html = fetch_fragment(club_url)
     player_urls = extract_player_links(listing_html, club_id)
@@ -166,25 +191,24 @@ def scrape_club_players(
                 file_handle.write(listing_html)
         return []
 
+    if limit is not None:
+        player_urls = player_urls[:limit]
+
     players: List[PlayerPoints] = []
-    for idx, url in enumerate(player_urls, start=1):
-        licence_match = re.search(r"/licencies/(\d+)", url)
-        if not licence_match:
-            continue
-        licence = licence_match.group(1)
-        classement_url = build_page_url(
-            f"app/fftt/licencies/{licence}/graphiques/journee/classement"
-        )
-        player = parse_player_page(classement_url)
-        if player:
-            players.append(player)
-            if limit is not None and len(players) >= limit:
-                break
-        elif DEBUG_DUMP_HTML and idx == 1:
-            html = fetch_fragment(classement_url)
-            with open("pingpocket_classement_sample.html", "w", encoding="utf-8") as file_handle:
-                file_handle.write(html)
-        time.sleep(REQUEST_SLEEP_SECONDS)
+    worker_count = max(1, min(SCRAPE_WORKERS, len(player_urls)))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_to_url = {
+            executor.submit(parse_player_from_listing_url, url): url for url in player_urls
+        }
+        for future in as_completed(future_to_url):
+            try:
+                player = future.result()
+            except requests.RequestException as exc:
+                if DEBUG_DUMP_HTML:
+                    print(f"Erreur joueur {future_to_url[future]}: {exc}")
+                continue
+            if player:
+                players.append(player)
 
     return players
 
