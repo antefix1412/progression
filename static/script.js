@@ -1,6 +1,5 @@
 const form = document.querySelector("#search-form");
 const statusEl = document.querySelector("#status");
-const messageEl = document.querySelector("#message");
 const loaderEl = document.querySelector("#loader");
 const elapsedEl = document.querySelector("#elapsed");
 const tbody = document.querySelector("#players");
@@ -27,10 +26,6 @@ function setStatus(message) {
   statusEl.textContent = message;
 }
 
-function setMessage(message = "") {
-  messageEl.hidden = !message;
-  messageEl.textContent = message;
-}
 
 function setLoader(isVisible) {
   loaderEl.hidden = !isVisible;
@@ -74,46 +69,6 @@ function renderPlayers(players) {
   }).join("");
 }
 
-function renderPayload(payload) {
-  allPlayers = payload.players || [];
-  renderPlayers(allPlayers);
-
-  if (payload.empty_cache) {
-    setMessage("Aucun résultat sauvegardé pour le moment. Lancez un rafraîchissement pour créer le cache.");
-    setStatus("Aucun cache disponible");
-    return;
-  }
-
-  if (!allPlayers.length) {
-    setMessage("Dernière actualisation terminée: aucun joueur trouvé.");
-    setStatus("Terminé sans résultat");
-    return;
-  }
-
-  const updatedText = payload.updated_at
-    ? new Date(payload.updated_at).toLocaleString("fr-FR")
-    : "date inconnue";
-  setStatus(`${allPlayers.length} joueur(s) affiché(s) - dernière actualisation: ${updatedText}`);
-}
-
-async function loadCachedPlayers() {
-  setMessage("");
-  setStatus("Chargement des résultats sauvegardés...");
-
-  try {
-    const response = await fetch("/api/players");
-    const payload = await readJsonResponse(response);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
-    }
-
-    renderPayload(payload);
-  } catch (error) {
-    setMessage(`Erreur de chargement du cache: ${error.message}`);
-    setStatus("Erreur");
-  }
-}
-
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const params = new URLSearchParams(new FormData(form));
@@ -123,7 +78,6 @@ form.addEventListener("submit", async (event) => {
   submit.innerHTML = '<span aria-hidden="true">🔄</span> Recherche...';
   copyButton.disabled = true;
   copyButton.classList.remove("ready");
-  setMessage("");
   setLoader(true);
   setStatus("Rafraîchissement en cours...");
   allPlayers = [];
@@ -156,23 +110,12 @@ form.addEventListener("submit", async (event) => {
       }
     }
 
-    const saveResponse = await fetch("/api/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        club_id: document.querySelector("#club-id").value,
-        players: refreshedPlayers,
-      }),
-    });
-    const savedPayload = await readJsonResponse(saveResponse);
-    if (!saveResponse.ok) {
-      throw new Error(`HTTP ${saveResponse.status}: ${JSON.stringify(savedPayload)}`);
-    }
+    allPlayers = refreshedPlayers;
+    renderPlayers(allPlayers);
 
-    renderPayload(savedPayload);
+    setStatus("");
   } catch (error) {
-    setMessage(`Erreur de connexion: ${error.message}`);
-    setStatus("Erreur");
+    setStatus(`Erreur de connexion: ${error.message}`);
   } finally {
     loading = false;
     setLoader(false);
@@ -212,8 +155,6 @@ copyButton.addEventListener("click", async () => {
     await navigator.clipboard.writeText(text);
     setStatus("Tableau copié");
   } catch {
-    setMessage("Impossible de copier automatiquement le tableau.");
+    setStatus("Impossible de copier automatiquement le tableau.");
   }
 });
-
-loadCachedPlayers();
