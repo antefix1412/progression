@@ -12,6 +12,7 @@ let visiblePlayers = [];
 let loading = false;
 let startedAt = 0;
 let timerId = null;
+const BATCH_SIZE = 8;
 
 function formatNumber(value) {
   return Math.round(Number(value)).toLocaleString("fr-FR");
@@ -129,13 +130,46 @@ form.addEventListener("submit", async (event) => {
   renderPlayers([]);
 
   try {
-    const response = await fetch(`/api/refresh?${params.toString()}`);
-    const payload = await readJsonResponse(response);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
+    let offset = 0;
+    let total = null;
+    const refreshedPlayers = [];
+
+    while (total === null || offset < total) {
+      params.set("offset", String(offset));
+      params.set("batch_size", String(BATCH_SIZE));
+
+      const response = await fetch(`/api/refresh?${params.toString()}`);
+      const payload = await readJsonResponse(response);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
+      }
+
+      total = payload.total;
+      offset = payload.next_offset;
+      refreshedPlayers.push(...payload.players);
+      allPlayers = refreshedPlayers;
+      renderPlayers(allPlayers);
+      setStatus(`Rafraîchissement en cours... ${Math.min(offset, total)} / ${total} joueurs analysés`);
+
+      if (payload.done) {
+        break;
+      }
     }
 
-    renderPayload(payload);
+    const saveResponse = await fetch("/api/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        club_id: document.querySelector("#club-id").value,
+        players: refreshedPlayers,
+      }),
+    });
+    const savedPayload = await readJsonResponse(saveResponse);
+    if (!saveResponse.ok) {
+      throw new Error(`HTTP ${saveResponse.status}: ${JSON.stringify(savedPayload)}`);
+    }
+
+    renderPayload(savedPayload);
   } catch (error) {
     setMessage(`Erreur de connexion: ${error.message}`);
     setStatus("Erreur");

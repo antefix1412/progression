@@ -171,28 +171,16 @@ def parse_player_from_listing_url(url: str) -> Optional[PlayerPoints]:
     return parse_player_page(classement_url)
 
 
-def format_progression(value: float) -> str:
-    return f"+{value:.1f}" if value >= 0 else f"{value:.1f}"
-
-
-def scrape_club_players(
-    club_id: str = CLUB_ID,
-    sort_param: str = SORT_PARAM,
-    limit: Optional[int] = None,
-) -> List[PlayerPoints]:
+def get_club_player_urls(club_id: str = CLUB_ID, sort_param: str = SORT_PARAM) -> List[str]:
     get_session().get(BASE_URL, timeout=REQUEST_TIMEOUT)
     club_url = build_page_url(f"app/fftt/clubs/{club_id}/licencies?SORT={sort_param}")
     listing_html = fetch_fragment(club_url)
-    player_urls = extract_player_links(listing_html, club_id)
+    return extract_player_links(listing_html, club_id)
 
+
+def scrape_player_urls(player_urls: List[str]) -> List[PlayerPoints]:
     if not player_urls:
-        if DEBUG_DUMP_HTML:
-            with open("pingpocket_listing.html", "w", encoding="utf-8") as file_handle:
-                file_handle.write(listing_html)
         return []
-
-    if limit is not None:
-        player_urls = player_urls[:limit]
 
     players: List[PlayerPoints] = []
     worker_count = max(1, min(SCRAPE_WORKERS, len(player_urls)))
@@ -209,8 +197,30 @@ def scrape_club_players(
                 continue
             if player:
                 players.append(player)
-
     return players
+
+
+def format_progression(value: float) -> str:
+    return f"+{value:.1f}" if value >= 0 else f"{value:.1f}"
+
+
+def scrape_club_players(
+    club_id: str = CLUB_ID,
+    sort_param: str = SORT_PARAM,
+    limit: Optional[int] = None,
+) -> List[PlayerPoints]:
+    player_urls = get_club_player_urls(club_id=club_id, sort_param=sort_param)
+
+    if not player_urls:
+        if DEBUG_DUMP_HTML:
+            with open("pingpocket_listing.html", "w", encoding="utf-8") as file_handle:
+                file_handle.write(listing_html)
+        return []
+
+    if limit is not None:
+        player_urls = player_urls[:limit]
+
+    return scrape_player_urls(player_urls)
 
 
 def main() -> None:
