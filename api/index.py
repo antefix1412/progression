@@ -17,7 +17,11 @@ def players_payload(query: str) -> tuple[dict, int]:
     if not re.fullmatch(r"\d+", club_id):
         return {"error": "L'ID club doit contenir uniquement des chiffres."}, 400
 
-    cached = get_cached_results()
+    try:
+        cached = get_cached_results()
+    except Exception as exc:
+        return {"error": f"Impossible de lire le cache Supabase: {exc}"}, 502
+
     if not cached:
         return {
             "club_id": club_id,
@@ -42,13 +46,17 @@ def refresh_payload(query: str = "") -> tuple[dict, int]:
     except Exception as exc:
         return {"error": f"Impossible de récupérer les données PingPocket: {exc}"}, 502
 
-    payload = {
-        "club_id": club_id,
-        "players": [player.to_dict() for player in players],
-        "updated_at": datetime.now(ZoneInfo("Europe/Paris")).isoformat(timespec="seconds"),
-        "empty_cache": False,
-    }
-    set_cached_results(payload)
+    try:
+        payload = {
+            "club_id": club_id,
+            "players": [player.to_dict() for player in players],
+            "updated_at": datetime.now(ZoneInfo("Europe/Paris")).isoformat(timespec="seconds"),
+            "empty_cache": False,
+        }
+        set_cached_results(payload)
+    except Exception as exc:
+        return {"error": f"Impossible de sauvegarder dans Supabase: {exc}"}, 502
+
     return payload, 200
 
 

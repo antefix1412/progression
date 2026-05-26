@@ -101,7 +101,7 @@ async function loadCachedPlayers() {
 
   try {
     const response = await fetch("/api/players");
-    const payload = await response.json();
+    const payload = await readJsonResponse(response);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
     }
@@ -130,7 +130,7 @@ form.addEventListener("submit", async (event) => {
 
   try {
     const response = await fetch(`/api/refresh?${params.toString()}`);
-    const payload = await response.json();
+    const payload = await readJsonResponse(response);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
     }
@@ -147,6 +147,15 @@ form.addEventListener("submit", async (event) => {
     copyButton.disabled = visiblePlayers.length === 0;
   }
 });
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Réponse serveur non JSON (${response.status}): ${text.slice(0, 180)}`);
+  }
+}
 
 copyButton.addEventListener("click", async () => {
   if (!visiblePlayers.length) {

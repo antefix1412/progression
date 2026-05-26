@@ -5,12 +5,16 @@ import json
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
-from api.index import refresh_payload
-
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
-        payload, status = refresh_payload(urlparse(self.path).query)
+        try:
+            from api.index import refresh_payload
+
+            payload, status = refresh_payload(urlparse(self.path).query)
+        except Exception as exc:
+            payload, status = {"error": f"Erreur serveur: {exc}"}, 500
+
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
