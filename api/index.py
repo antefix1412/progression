@@ -53,22 +53,12 @@ def refresh_payload(query: str = "") -> tuple[dict, int]:
 
 
 def cron_payload(query: str = "") -> tuple[dict, int]:
-    now = datetime.now(ZoneInfo("Europe/Paris"))
-    if now.hour != 2:
-        return {
-            "success": True,
-            "skipped": True,
-            "reason": "Cron ignored because it is not 02:00 in Europe/Paris.",
-            "paris_time": now.isoformat(timespec="seconds"),
-        }, 200
-
     payload, status = refresh_payload(query)
     if status != 200:
         return payload, status
 
     return {
         "success": True,
-        "skipped": False,
         "updated_at": payload["updated_at"],
         "players_count": len(payload["players"]),
     }, 200
