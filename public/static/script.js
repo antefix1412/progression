@@ -79,7 +79,7 @@ function renderPayload(payload) {
   renderPlayers(allPlayers);
 
   if (payload.empty_cache) {
-    setMessage("Aucun résultat sauvegardé pour le moment. La prochaine actualisation automatique aura lieu à 2h.");
+    setMessage("Aucun résultat sauvegardé pour le moment. Lancez un rafraîchissement pour créer le cache.");
     setStatus("Aucun cache disponible");
     return;
   }

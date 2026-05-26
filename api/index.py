@@ -7,7 +7,7 @@ import re
 from urllib.parse import parse_qs
 
 from cache_store import get_cached_results, set_cached_results
-from ping import CLUB_ID, SORT_PARAM, get_club_player_urls, scrape_club_players, scrape_player_urls
+from ping import CLUB_ID, SORT_PARAM, get_club_player_urls, scrape_player_urls
 
 DEFAULT_BATCH_SIZE = 8
 
@@ -22,7 +22,7 @@ def players_payload(query: str) -> tuple[dict, int]:
     try:
         cached = get_cached_results()
     except Exception as exc:
-        return {"error": f"Impossible de lire le cache Supabase: {exc}"}, 502
+        return {"error": f"Impossible de lire le cache local: {exc}"}, 502
 
     if not cached:
         return {
@@ -82,30 +82,8 @@ def save_payload(body: dict) -> tuple[dict, int]:
         }
         set_cached_results(payload)
     except Exception as exc:
-        return {"error": f"Impossible de sauvegarder dans Supabase: {exc}"}, 502
+        return {"error": f"Impossible de sauvegarder dans le cache local: {exc}"}, 502
 
     return payload, 200
 
 
-def cron_payload(query: str = "") -> tuple[dict, int]:
-    params = parse_qs(query)
-    club_id = params.get("club_id", [CLUB_ID])[0].strip()
-    sort_param = params.get("sort", [SORT_PARAM])[0].strip() or SORT_PARAM
-
-    try:
-        players = scrape_club_players(club_id=club_id, sort_param=sort_param)
-    except Exception as exc:
-        return {"error": f"Impossible de récupérer les données PingPocket: {exc}"}, 502
-
-    payload, status = save_payload({
-        "club_id": club_id,
-        "players": [player.to_dict() for player in players],
-    })
-    if status != 200:
-        return payload, status
-
-    return {
-        "success": True,
-        "updated_at": payload["updated_at"],
-        "players_count": len(payload["players"]),
-    }, 200

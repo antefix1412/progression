@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from api.index import cron_payload, players_payload, refresh_payload, save_payload
+from api.index import players_payload, refresh_payload, save_payload
 from ping import CLUB_ID
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -51,11 +51,6 @@ class AppHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/refresh":
             payload, status = refresh_payload(parsed.query)
-            self.send_json(payload, status)
-            return
-
-        if parsed.path == "/api/cron":
-            payload, status = cron_payload(parsed.query)
             self.send_json(payload, status)
             return
 
