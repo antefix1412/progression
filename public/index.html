@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Progression Calculée FFTT</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/script.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <div class="app-card">
+      <header class="hero">
+        <h1><span class="title-icon" aria-hidden="true">🏓</span> Progression Calculée FFTT</h1>
+      </header>
+
+      <form id="search-form" hidden>
+        <input type="hidden" id="club-id" name="club_id" value="03350022">
+        <input type="hidden" id="sort" name="sort" value="MONTHLY_POINTS">
+      </form>
+
+      <section class="actions" aria-label="Actions">
+        <button id="submit" type="submit" form="search-form">
+          <span aria-hidden="true">🔄</span>
+          Rafraîchir maintenant
+        </button>
+        <button id="copy" class="secondary" type="button" disabled>
+          <span aria-hidden="true">📋</span>
+          Copier tout
+        </button>
+      </section>
+
+      <section class="results" aria-live="polite">
+        <div id="message" class="message" hidden></div>
+        <div id="loader" class="loader" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <div>
+            <strong>Recherche en cours</strong>
+            <span id="elapsed">0 s</span>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Prénom</th>
+                <th>Nom</th>
+                <th class="num">Points officiels</th>
+                <th class="num">Points calculés FFTT</th>
+                <th class="num">Progression</th>
+              </tr>
+            </thead>
+            <tbody id="players">
+              <tr><td class="empty" colspan="5">Aucune donnée à afficher</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer id="status" class="status">Prêt</footer>
+    </div>
+  </main>
+</body>
+</html>
