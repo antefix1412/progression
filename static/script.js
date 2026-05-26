@@ -73,10 +73,43 @@ function renderPlayers(players) {
   }).join("");
 }
 
-function refreshVisiblePlayers() {
+function renderPayload(payload) {
+  allPlayers = payload.players || [];
   renderPlayers(allPlayers);
-  if (allPlayers.length) {
-    setStatus(`${visiblePlayers.length} joueur(s) affiché(s) sur ${allPlayers.length}`);
+
+  if (payload.empty_cache) {
+    setMessage("Aucun résultat sauvegardé pour le moment. La prochaine actualisation automatique aura lieu à 2h.");
+    setStatus("Aucun cache disponible");
+    return;
+  }
+
+  if (!allPlayers.length) {
+    setMessage("Dernière actualisation terminée: aucun joueur trouvé.");
+    setStatus("Terminé sans résultat");
+    return;
+  }
+
+  const updatedText = payload.updated_at
+    ? new Date(payload.updated_at).toLocaleString("fr-FR")
+    : "date inconnue";
+  setStatus(`${allPlayers.length} joueur(s) affiché(s) - dernière actualisation: ${updatedText}`);
+}
+
+async function loadCachedPlayers() {
+  setMessage("");
+  setStatus("Chargement des résultats sauvegardés...");
+
+  try {
+    const response = await fetch("/api/players");
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
+    }
+
+    renderPayload(payload);
+  } catch (error) {
+    setMessage(`Erreur de chargement du cache: ${error.message}`);
+    setStatus("Erreur");
   }
 }
 
@@ -86,12 +119,12 @@ form.addEventListener("submit", async (event) => {
 
   loading = true;
   submit.disabled = true;
-  submit.innerHTML = '<span aria-hidden="true">🔄</span> Recherche...';
+  submit.innerHTML = '<span aria-hidden="true">🔄</span> Rechargement...';
   copyButton.disabled = true;
   copyButton.classList.remove("ready");
   setMessage("");
   setLoader(true);
-  setStatus("Chargement...");
+  setStatus("Chargement des résultats sauvegardés...");
   allPlayers = [];
   renderPlayers([]);
 
@@ -102,14 +135,7 @@ form.addEventListener("submit", async (event) => {
       throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
     }
 
-    allPlayers = payload.players;
-    refreshVisiblePlayers();
-    if (allPlayers.length === 0) {
-      setMessage("Recherche terminée: aucun joueur trouvé.");
-      setStatus("Terminé sans résultat");
-    } else {
-      setStatus(`Recherche terminée: ${allPlayers.length} joueur(s) trouvé(s)`);
-    }
+    renderPayload(payload);
   } catch (error) {
     setMessage(`Erreur de connexion: ${error.message}`);
     setStatus("Erreur");
@@ -117,7 +143,7 @@ form.addEventListener("submit", async (event) => {
     loading = false;
     setLoader(false);
     submit.disabled = false;
-    submit.innerHTML = '<span aria-hidden="true">🔄</span> Charger les Joueurs';
+    submit.innerHTML = '<span aria-hidden="true">🔄</span> Recharger l\'affichage';
     copyButton.disabled = visiblePlayers.length === 0;
   }
 });
@@ -146,3 +172,5 @@ copyButton.addEventListener("click", async () => {
     setMessage("Impossible de copier automatiquement le tableau.");
   }
 });
+
+loadCachedPlayers();

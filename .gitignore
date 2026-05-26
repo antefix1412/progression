@@ -1,5 +1,8 @@
 __pycache__/
 .venv/
+.env
+.env.local
 *.pyc
 pingpocket_listing.html
 pingpocket_classement_sample.html
+ping_cache.json
