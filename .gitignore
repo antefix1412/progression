@@ -1,0 +1,5 @@
+__pycache__/
+.venv/
+*.pyc
+pingpocket_listing.html
+pingpocket_classement_sample.html
